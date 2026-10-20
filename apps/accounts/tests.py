@@ -262,3 +262,47 @@ class UserManagementTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.viewer.refresh_from_db()
         self.assertEqual(self.viewer.role, User.Role.EDITOR)
+
+    def test_anonymous_user_cannot_create_users_or_change_roles(self):
+        response = self.client.post(
+            self.users_url,
+            {
+                "username": "anonymous-created",
+                "password": "Assessment-new-password-93!",
+                "role": User.Role.ADMIN,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertFalse(
+            User.objects.filter(username="anonymous-created").exists(),
+        )
+
+        response = self.client.patch(
+            f"{self.users_url}{self.viewer.pk}/",
+            {"role": User.Role.ADMIN},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.viewer.refresh_from_db()
+        self.assertEqual(self.viewer.role, User.Role.VIEWER)
+
+    def test_editor_and_viewer_cannot_change_roles(self):
+        for user in (self.editor, self.viewer):
+            with self.subTest(role=user.role):
+                self.client.force_authenticate(user=user)
+
+                response = self.client.patch(
+                    f"{self.users_url}{self.viewer.pk}/",
+                    {"role": User.Role.ADMIN},
+                    format="json",
+                )
+
+                self.assertEqual(
+                    response.status_code,
+                    status.HTTP_403_FORBIDDEN,
+                )
+                self.viewer.refresh_from_db()
+                self.assertEqual(self.viewer.role, User.Role.VIEWER)
