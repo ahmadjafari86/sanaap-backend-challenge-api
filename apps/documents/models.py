@@ -23,3 +23,26 @@ class Document(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class DocumentAuditEvent(models.Model):
+    class Action(models.TextChoices):
+        CREATE = "create", "Create document"
+        UPDATE = "update", "Update document"
+        DELETE = "delete", "Delete document"
+        DOWNLOAD_URL = "download_url", "Issue download URL"
+
+    class Outcome(models.TextChoices):
+        SUCCESS = "success", "Success"
+        FAILURE = "failure", "Failure"
+
+    # Snapshots deliberately have no foreign keys: deletion must retain history.
+    actor_id = models.PositiveBigIntegerField(null=True, editable=False, db_index=True)
+    document_id = models.PositiveBigIntegerField(null=True, editable=False, db_index=True)
+    action = models.CharField(max_length=16, choices=Action.choices, editable=False)
+    outcome = models.CharField(max_length=7, choices=Outcome.choices, editable=False)
+    status_code = models.PositiveSmallIntegerField(editable=False)
+    occurred_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-occurred_at", "-id")

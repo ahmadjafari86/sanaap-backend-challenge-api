@@ -74,10 +74,11 @@
 - [x] Add isolation guards and verify cleanup preserves all pre-existing volumes.
 - [x] Document setup, application-admin creation, auth/roles, endpoints, examples, file limits, assumptions, and limitations (T08 reviewed by user).
 - [x] Document presigned URL behavior after logout or role changes (T05 reviewed by user).
-- [ ] Merge through develop and prepare the main branch for delivery.
+- [x] Merge mandatory document work into develop through PR #3 (T09 reviewed by user).
+- [ ] Prepare main for delivery through the final release checkpoint.
 
 ## 6. Optional Features
-- [ ] Audit log: actor, action, document identifier, time, and outcome.
+- [x] Audit log: actor, action, document identifier, time, and outcome (T10 implemented and verified; shared review pending).
 - [x] Configure Gunicorn as the application server.
 - [ ] Add Nginx as the reverse proxy.
 - [ ] Celery storage tasks with shared staging, bounded retries,

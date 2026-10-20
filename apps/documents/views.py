@@ -11,6 +11,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from urllib3.exceptions import HTTPError
 
+from .audit import DocumentAuditMixin
 from .caching import get_document_metadata
 from .exceptions import (
     DocumentCreationUnavailable,
@@ -18,7 +19,7 @@ from .exceptions import (
     DocumentDownloadUnavailable,
     DocumentUpdateUnavailable,
 )
-from .models import Document
+from .models import Document, DocumentAuditEvent
 from .pagination import DocumentPagination
 from .permissions import DocumentRolePermission
 from .schema import detail_schema, download_schema, list_schema
@@ -40,7 +41,8 @@ logger = logging.getLogger(__name__)
 
 
 @list_schema
-class DocumentListCreateView(generics.ListCreateAPIView):
+class DocumentListCreateView(DocumentAuditMixin, generics.ListCreateAPIView):
+    audit_actions = {"POST": DocumentAuditEvent.Action.CREATE}
     queryset = Document.objects.order_by("-created_at", "-id")
     serializer_class = DocumentSerializer
     pagination_class = DocumentPagination
@@ -86,7 +88,12 @@ class DocumentListCreateView(generics.ListCreateAPIView):
 
 
 @detail_schema
-class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
+class DocumentDetailView(DocumentAuditMixin, generics.RetrieveUpdateDestroyAPIView):
+    audit_actions = {
+        "PUT": DocumentAuditEvent.Action.UPDATE,
+        "PATCH": DocumentAuditEvent.Action.UPDATE,
+        "DELETE": DocumentAuditEvent.Action.DELETE,
+    }
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
     permission_classes = [DocumentRolePermission]
@@ -124,6 +131,7 @@ class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
                 document_id=document.pk,
                 title=serializer.validated_data.get("title"),
                 uploaded_file=serializer.validated_data.get("file"),
+                actor_id=request.user.pk,
             )
         except Document.DoesNotExist as error:
             raise Http404 from error
@@ -138,7 +146,7 @@ class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
     def destroy(self, request, *args, **kwargs):
         try:
             document = self.get_object()
-            delete_document(document_id=document.pk)
+            delete_document(document_id=document.pk, actor_id=request.user.pk)
         except Document.DoesNotExist as error:
             raise Http404 from error
         except DatabaseError as error:
@@ -150,7 +158,8 @@ class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 @method_decorator(never_cache, name="dispatch")
 @download_schema
-class DocumentDownloadView(generics.GenericAPIView):
+class DocumentDownloadView(DocumentAuditMixin, generics.GenericAPIView):
+    audit_actions = {"GET": DocumentAuditEvent.Action.DOWNLOAD_URL}
     queryset = Document.objects.all()
     serializer_class = DocumentDownloadSerializer
     permission_classes = [DocumentRolePermission]
@@ -159,7 +168,7 @@ class DocumentDownloadView(generics.GenericAPIView):
     def get(self, request, *args, **kwargs):
         try:
             document = self.get_object()
-            download_url = get_document_download_url(document=document)
+            download_url = get_document_download_url(document=document, actor_id=request.user.pk)
         except (DatabaseError, OSError, MinioException, HTTPError) as error:
             logger.error("Document download signing failed (%s).", type(error).__name__)
             raise DocumentDownloadUnavailable() from error

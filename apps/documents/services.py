@@ -5,8 +5,9 @@ from uuid import uuid4
 from django.core.files.storage import default_storage
 from django.db import transaction
 
+from .audit import record_document_event
 from .caching import invalidate_document_metadata
-from .models import Document
+from .models import Document, DocumentAuditEvent
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ def create_document(*, title, uploaded_file, creator):
 
     try:
         with transaction.atomic():
-            return Document.objects.create(
+            document = Document.objects.create(
                 title=title,
                 original_filename=original_filename,
                 object_key=stored_key,
@@ -35,14 +36,16 @@ def create_document(*, title, uploaded_file, creator):
                 file_size=file_size,
                 creator=creator,
             )
-    except Exception:
-        try:
-            default_storage.delete(stored_key)
-        except Exception:
-            logger.exception(
-                "Failed to clean up the uploaded document file.",
+            record_document_event(
+                actor_id=creator.pk,
+                action=DocumentAuditEvent.Action.CREATE,
+                document_id=document.pk,
+                outcome=DocumentAuditEvent.Outcome.SUCCESS,
+                status_code=201,
             )
-
+            return document
+    except Exception:
+        _delete_document_object(stored_key)
         raise
 
 
@@ -57,7 +60,7 @@ def _delete_document_object(object_key):
         )
 
 
-def update_document(*, document_id, title=None, uploaded_file=None):
+def update_document(*, document_id, title=None, uploaded_file=None, actor_id=None):
     changes = {}
     stored_key = None
 
@@ -89,6 +92,13 @@ def update_document(*, document_id, title=None, uploaded_file=None):
                 setattr(document, field, value)
             document.metadata_version = uuid4()
             document.save(update_fields=[*changes, "updated_at", "metadata_version"])
+            record_document_event(
+                actor_id=actor_id,
+                action=DocumentAuditEvent.Action.UPDATE,
+                document_id=document.pk,
+                outcome=DocumentAuditEvent.Outcome.SUCCESS,
+                status_code=200,
+            )
 
             transaction.on_commit(
                 partial(invalidate_document_metadata, document.pk, previous_version),
@@ -104,17 +114,32 @@ def update_document(*, document_id, title=None, uploaded_file=None):
         raise
 
 
-def delete_document(*, document_id):
+def delete_document(*, document_id, actor_id=None):
     with transaction.atomic():
         document = Document.objects.select_for_update().get(pk=document_id)
         object_key = document.object_key
         metadata_version = document.metadata_version
         document.delete()
+        record_document_event(
+            actor_id=actor_id,
+            action=DocumentAuditEvent.Action.DELETE,
+            document_id=document_id,
+            outcome=DocumentAuditEvent.Outcome.SUCCESS,
+            status_code=204,
+        )
         transaction.on_commit(
             partial(invalidate_document_metadata, document_id, metadata_version),
         )
         transaction.on_commit(partial(_delete_document_object, object_key))
 
 
-def get_document_download_url(*, document):
-    return default_storage.url(document.object_key)
+def get_document_download_url(*, document, actor_id=None):
+    download_url = default_storage.url(document.object_key)
+    record_document_event(
+        actor_id=actor_id,
+        action=DocumentAuditEvent.Action.DOWNLOAD_URL,
+        document_id=document.pk,
+        outcome=DocumentAuditEvent.Outcome.SUCCESS,
+        status_code=200,
+    )
+    return download_url

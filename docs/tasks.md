@@ -26,14 +26,31 @@
 | T06 | Title search, creator filtering, and pagination | Mandatory | Completed; reviewed by user |
 | T07 | Resilient document metadata caching | Mandatory | Completed; reviewed by user |
 | T08 | OpenAPI, Swagger, and user documentation | Mandatory | Completed; reviewed by user |
-| T09 | Mandatory integration checks and documents PR | Mandatory | Verification complete; awaiting shared review |
-| T10 | Audit logging | Optional, included in scope | Pending |
+| T09 | Mandatory integration checks and documents PR | Mandatory | Completed; reviewed by user; merged into develop |
+| T10 | Audit logging | Optional, included in scope | Verification complete; awaiting shared review |
 | T11 | Nginx deployment with Gunicorn | Optional, included in scope | Pending |
 | T12 | Celery background document storage | Optional, included in scope | Pending |
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Pending |
 | T14 | Final regression checks and Git Flow release | Delivery | Pending |
 
-## Review Checkpoint — T09
+## Review Checkpoint — T10
+
+- Started `feature/audit-logging` from `develop` after the user's T09 approval and PR #3 merge (`580197c`).
+- Added `DocumentAuditEvent` and migration 0003. Events store actor/document id snapshots, allowlisted action and outcome, UTC time, and HTTP status. IDs survive document/user deletion; no body, header, filename, object key, credential, URL, or exception text is retained.
+- Successful create/update/delete events share the service transaction. An event-write failure rolls back the change and compensates a new upload. URL issuance records success before returning the signed URL; audit-write failure returns safe 503.
+- Added a shared API exception mixin for denied, anonymous/invalid-token, validation/parse, missing-document, storage/database, and unexpected failures. Failure auditing isolates SQL errors with a savepoint, preserves the original response, avoids retrying authentication, and safely bounds route ids.
+- Existing upload cleanup now reuses the redacted helper: a new regression exposed chained private exception details when both audit insertion and cleanup failed, then passed after removing traceback logging from that handled path.
+- Added 24 regressions. The initial 23 failed before the model existed, then passed after implementation. Tests cover real inserts followed by failure, actual NOT NULL violations, rollback and compensation, actor attribution, deleted identifiers, no duplicate normal-operation events, read exclusions, forged fields, and secret leakage.
+- Final clean-stack integration passed all **197 PostgreSQL tests**, migration checks, warning-free schema validation, actual file/role/privacy/expiry checks, Redis/MinIO outages, and an exact match of all **19 durable audit events** after the tested documents were deleted. Disposable resources were removed and all pre-existing volumes preserved.
+- Rebuilt the main backend, applied migration 0003 on the existing database, and repeated all 197 tests without skips. Migration drift and warning-free OpenAPI checks passed again.
+- One independent whole-feature review found no Critical, Important, or Minor findings and independently passed all 24 focused tests. README provides shell inspection instructions and the audit scope/limits.
+- Failure-event persistence remains best effort during a database outage/process crash. URL issuance does not prove receipt or transfer. Internal calls may have a null actor; framework failures outside the DRF handler boundary, privileged audit edits, retention automation, historical backfill, and an audit endpoint remain outside this feature.
+- Prepare the verified checkpoint as a draft PR into `develop`; hold for shared user review before merging or starting T11.
+
+## Completed Review — T09
+
+- The user approved T09. [PR #3](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/3) was marked ready and merged into `develop` using a merge commit, `580197c`. All 173 tests passed again before merging; GitHub reported a clean merge with no pending/failing checks or review objections.
+- T10 starts on `feature/audit-logging` from that updated `develop` commit.
 
 - Added `make integration`, a standard-library Python controller, and a Compose override for a disposable `sanaap-t09-*` project with fresh credentials, random loopback API/MinIO ports, and separate volumes. It rebuilds current images and runs regression tests in a fresh one-off backend container.
 - Added six isolation tests, written before the guard implementation. The controller rejects shared/external resources, bind mounts, unsafe port publication, and fixed container names, checks isolation again before cleanup, and verifies all pre-existing volumes survive.
@@ -44,8 +61,8 @@
 - Whole-branch independent review found two Important issues: truncated JPEG pixel data passed validation, and initial uploads omitted attempted-key cleanup after a lost acknowledgement. Four new regressions reproduced both issues before implementation. The fixes fully decode images before storage, rewind the upload stream, and attempt UUID-key cleanup while preserving the original storage error. Also removed one trailing-whitespace issue.
 - Final clean-stack verification: all **173 tests passed on PostgreSQL**; startup, applied/missing migrations, and warning-free OpenAPI validation passed. Real integration then completed successfully and removed only its own resources, preserving all pre-existing volumes.
 - Rebuilt the main backend with the final code and repeated all 173 PostgreSQL tests without skips, migration drift detection, and warning-free schema validation. Host Swagger and MinIO health endpoints both returned HTTP 200.
-- README now documents the integration command and prerequisites, full image decoding, attempted-key compensation, and remaining timeout/crash/cleanup limitations. The mandatory implementation checklist is updated; merging and optional work remain unchecked.
-- This checkpoint prepares the draft documents PR from `feature/documents` into `develop`. Hold for shared user review before merging or starting T10; optional audit, Nginx, Celery, and Channels remain pending.
+- README documents the integration command and prerequisites, full image decoding, attempted-key compensation, and remaining timeout/crash/cleanup limitations. The mandatory implementation checklist was updated at the T09 checkpoint; later optional features and the final release have separate review gates.
+- The verified T09 checkpoint is commit `c5a8657`. Mandatory work is merged into `develop`; release preparation for `main` and subsequent optional tasks remain in their own checkpoints.
 
 ## Completed Review — T08
 
@@ -296,6 +313,17 @@
 - Cover successful and failed operations without logging passwords, tokens, or presigned URLs.
 - Preserve audit information after document deletion. Issuing a URL is not evidence of a completed download.
 - Test audit records and complete a dedicated feature PR/review.
+- Implement this approved scope in `apps/documents`: `DocumentAuditEvent` stores nullable actor/document id snapshots, an allowlisted action (`create`, `update`, `delete`, `download_url`), UTC `occurred_at`, `success`/`failure`, and HTTP status. No foreign-key cascade, body, headers, URL, filename, object key, or exception text is stored.
+- Successful mutation events share the service transaction and roll back with it. An audit insertion failure must roll back the mutation and preserve existing storage compensation. Download issuance records success before returning the URL; recording failure returns the existing safe 503.
+- An API mixin records failed attempts, including authentication, permission, validation, missing-document, storage/database, and unexpected errors. Failure logging uses a savepoint and redacted best-effort fallback so it cannot replace the original response. Unauthenticated actors and out-of-range route identifiers are stored as null, never forged request identities.
+- Routine list/detail/HEAD/OPTIONS reads and unsupported methods do not create operation events. A deletion that committed but could not clean storage still records the successful metadata deletion; cleanup errors retain their existing operator logs.
+- Interfaces: `record_document_event(*, actor_id, action, document_id, outcome, status_code)`; `DocumentAuditMixin.audit_actions` maps supported HTTP methods to actions; update/delete/signing services accept optional `actor_id=None`, with API views passing the authenticated user's id. Creation uses its existing `creator` argument.
+- Files: model and migration in `models.py`/`migrations/0003_*`; event writer and exception mixin in `audit.py`; service/view integration in `services.py`/`views.py`; contract/transaction tests in `test_audit_api.py`; real audit assertions in `scripts/integration_check.py`; README inspection instructions and limitations.
+- [x] Write and run failing database-backed API/transaction regressions: correct actor/action/id/time/status; denial/invalid/missing/failure attempts; retained identifiers after deletion; no duplicate events or secret leakage; no success after rollback; audit failure compensation; safe failure-audit fallback; unbounded route ids.
+- [x] Implement the smallest model/writer/mixin/service changes and watch those tests pass.
+- [x] Run the full PostgreSQL suite, migration drift/OpenAPI checks, and disposable real-service integration with durable audit assertions.
+- [x] Obtain one independent review of the complete T10 branch; resolve Important/Critical findings in one test-backed pass and record any remaining limitations.
+- [ ] Commit/push the verified review checkpoint, open a draft PR into `develop`, and hold before merge/T11 for shared user review. The user's authorization to commit whenever necessary covers the checkpoint needed to make that draft concrete.
 
 ### Task 11: T11 — Nginx deployment
 
