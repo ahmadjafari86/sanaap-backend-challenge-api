@@ -19,7 +19,7 @@
 | --- | --- | --- | --- |
 | T01 | Document upload API | Mandatory | Completed; reviewed by user |
 | T02 | Shared document list and detail API | Mandatory | Completed; reviewed by user |
-| T03 | Metadata updates and safe image replacement | Mandatory | Pending |
+| T03 | Metadata updates and safe image replacement | Mandatory | Completed; reviewed by user |
 | T04 | Document deletion after successful database commit | Mandatory | Pending |
 | T05 | Private download URLs valid for 60 seconds | Mandatory | Pending |
 | T06 | Title search, creator filtering, and pagination | Mandatory | Pending |
@@ -31,6 +31,20 @@
 | T12 | Celery background document storage | Optional, included in scope | Pending |
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Pending |
 | T14 | Final regression checks and Git Flow release | Delivery | Pending |
+
+## Completed Review — T03
+
+- The user approved the shared review of T03 and authorized proceeding to T04 after its commit.
+- Added JSON/multipart PATCH and PUT updates. Admins/editors can update shared documents; original creator and server-derived metadata remain protected.
+- PATCH requires a title and/or file; PUT requires a title and optionally replaces the file. Empty changes, invalid images, and images over 10 MiB are rejected.
+- Replacement uploads use fresh UUID keys. The service locks and rereads the current row before saving, then deletes the previous object only after commit.
+- Upload/database failures and a document disappearing during upload preserve the previous reference where it still exists and attempt new-object cleanup.
+- Independent review found one Important issue with lost upload acknowledgements. A regression reproduced the orphan, then the fix made it pass by cleaning the attempted UUID key while preserving the original error. No Critical or Minor issues were reported.
+- Added 23 update tests, including a PostgreSQL-only concurrent replacement test. The initial update tests failed with 405 before implementation.
+- Final verification: `docker compose exec -T backend python manage.py test --noinput` — all 76 tests passed on PostgreSQL, with no skipped tests.
+- Migration dry-run reported no changes; `git diff --check` passed.
+- README documents crash/cleanup, lost-acknowledgement, backend renaming, and outer-transaction rollback windows. Automatic orphan reconciliation is not implemented.
+- Verification was repeated successfully before committing T03: all 76 PostgreSQL tests passed.
 
 ## Completed Review — T02
 
@@ -44,6 +58,7 @@
 - Independent read-only code review found no Critical, Important, or Minor issues and independently passed the 26 upload/read tests.
 - Filtering/pagination (T06), caching (T07), full schema/docs (T08), and real MinIO checks (T09) remain assigned to their existing tasks. T02 introduces no storage I/O on reads.
 - Verification was repeated successfully before committing T02: all 53 PostgreSQL tests passed.
+- Commit: `5c23230` — `feat(documents): add shared list and detail API`.
 
 ## Completed Review — T01
 
@@ -92,6 +107,14 @@
 - Upload replacements under new keys before updating the database; delete the old object only after commit.
 - Handle concurrent replacement safely. On upload or database failure, keep the previous reference and file and attempt cleanup of the new upload.
 - Test role access, invalid input, rollback, cleanup failure, and transaction timing.
+- Interfaces: `PATCH /api/v1/documents/<id>/` accepts a title and/or image; `PUT` requires a title and optionally replaces the image. JSON metadata and multipart image updates are supported.
+- Reject empty updates and preserve server-owned creator, creation time, object key, and image metadata against client overrides.
+- Upload a replacement before locking the row, then fetch its current state with `select_for_update()` inside `transaction.atomic()`; this avoids stale updates and serializes concurrent replacements.
+- Schedule best-effort old-object deletion with `transaction.on_commit()`. A cleanup failure must not turn a committed update into an API failure.
+- On database failure or disappearance of the document after upload, attempt new-object cleanup and preserve the previous database reference; return safe 503 or 404 responses as appropriate.
+- Document unavoidable crash/cleanup and outer-transaction rollback windows. Verify concurrency with a PostgreSQL transaction test.
+- Test-first: add HTTP/state-based tests before implementation; expect PATCH/PUT to fail with 405. Run all tests and migration checks in Docker after implementation.
+- Complete shared review before committing T03 and starting deletion task T04.
 
 ### Task 4: T04 — Document deletion
 

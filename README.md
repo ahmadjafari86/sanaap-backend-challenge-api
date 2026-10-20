@@ -45,3 +45,27 @@ services. Check local-network access settings if connections fail.
 Feature branches start from `develop` and return through pull requests.
 Release branches prepare delivery to `main` and are merged back into
 `develop`. Released versions are tagged.
+
+## Document storage consistency
+
+PostgreSQL transactions do not include MinIO operations. Each image replacement
+uploads a new UUID-based object before updating document metadata. The update
+locks and rereads the document row so concurrent replacements use its current
+storage key. The previous object is deleted only after the database transaction
+commits. Metadata-only updates retain the image and original creator.
+
+If recording a replacement fails, the service attempts to remove the new object
+and preserves the previous reference. Cleanup errors are logged; failure to
+delete an old object after commit does not undo a successful update.
+
+There is no automatic orphan-object reconciler. A process crash between upload
+and database commit, a failed cleanup, or a crash before an after-commit callback
+runs can leave unreferenced objects that require reconciliation. Replacement
+upload errors trigger best-effort deletion of the attempted UUID key. An upload
+that finishes after a timeout, or a backend that changes an unacknowledged key,
+can still leave an orphan despite that attempt. If a caller wraps the service
+in an outer transaction, old-object deletion waits for that
+outer commit. An outer rollback preserves the old reference and object but can
+leave the new upload unreferenced, because Django has no rollback callback for
+this cleanup. The API currently uses the service transaction rather than an
+outer request transaction.

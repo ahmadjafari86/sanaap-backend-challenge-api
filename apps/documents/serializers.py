@@ -25,6 +25,15 @@ class DocumentUploadSerializer(serializers.Serializer):
         return uploaded_file
 
 
+class DocumentUpdateSerializer(DocumentUploadSerializer):
+    file = serializers.ImageField(required=False)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError("Provide a title or file to update.")
+        return attrs
+
+
 class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document

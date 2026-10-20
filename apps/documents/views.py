@@ -1,17 +1,22 @@
 import logging
 
 from django.db import DatabaseError
+from django.http import Http404
 from minio.error import MinioException
 from rest_framework import generics, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from urllib3.exceptions import HTTPError
 
-from .exceptions import DocumentCreationUnavailable
+from .exceptions import DocumentCreationUnavailable, DocumentUpdateUnavailable
 from .models import Document
 from .permissions import DocumentRolePermission
-from .serializers import DocumentSerializer, DocumentUploadSerializer
-from .services import create_document
+from .serializers import (
+    DocumentSerializer,
+    DocumentUpdateSerializer,
+    DocumentUploadSerializer,
+)
+from .services import create_document, update_document
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +53,37 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         )
 
 
-class DocumentDetailView(generics.RetrieveAPIView):
+class DocumentDetailView(generics.RetrieveUpdateAPIView):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
     permission_classes = [DocumentRolePermission]
-    http_method_names = ["get", "head", "options"]
+    http_method_names = ["get", "head", "put", "patch", "options"]
+
+    def get_serializer_class(self):
+        if self.request.method in ("PUT", "PATCH"):
+            return DocumentUpdateSerializer
+        return super().get_serializer_class()
+
+    def update(self, request, *args, **kwargs):
+        document = self.get_object()
+        serializer = self.get_serializer(
+            data=request.data,
+            partial=kwargs.pop("partial", False),
+        )
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            document = update_document(
+                document_id=document.pk,
+                title=serializer.validated_data.get("title"),
+                uploaded_file=serializer.validated_data.get("file"),
+            )
+        except Document.DoesNotExist as error:
+            raise Http404 from error
+        except (DatabaseError, OSError, MinioException, HTTPError) as error:
+            logger.error("Document update failed (%s).", type(error).__name__)
+            raise DocumentUpdateUnavailable() from error
+
+        return Response(
+            DocumentSerializer(document, context=self.get_serializer_context()).data,
+        )

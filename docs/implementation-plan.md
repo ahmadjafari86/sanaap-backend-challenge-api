@@ -42,12 +42,13 @@
 - [x] Implement document creation through the configured MinIO storage backend.
 - [x] Implement and test the upload API, including JWT, role access, validation, metadata, and safe failure responses (T01; reviewed by user).
 - [x] Implement and test shared document list/detail reads, deterministic ordering, JWT/role access, and HEAD/OPTIONS (T02; reviewed by user).
+- [x] Implement and test metadata updates and validated image replacement via PATCH/PUT, including concurrent replacements and after-commit cleanup (T03; reviewed by user).
 - [ ] Implement shared document CRUD for JPEG and PNG images.
 - [x] Generate UUID-based object keys for document uploads.
 - [ ] Issue private presigned download URLs valid for 60 seconds.
 - [x] Test upload, database, and cleanup failures during document creation.
-- [ ] Test database and storage failures during document replacement.
-- [ ] Preserve the previous file when replacement fails.
+- [x] Test database and storage failures during document replacement, including lost upload acknowledgements and cleanup failure.
+- [x] Preserve the previous file when replacement fails.
 - [x] Verify the document foundation (27 project tests passed).
 - [ ] Verify tests and commit.
 
