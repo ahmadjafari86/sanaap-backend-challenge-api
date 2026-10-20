@@ -17,7 +17,9 @@ RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --no-create-home app
 
 COPY --chown=app:app . .
-RUN chmod +x /app/docker/backend/entrypoint.sh
+RUN chmod +x /app/docker/backend/entrypoint.sh \
+    && mkdir -p /app/staticfiles \
+    && chown app:app /app/staticfiles
 
 USER app
 

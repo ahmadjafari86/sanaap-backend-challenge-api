@@ -9,7 +9,7 @@
 - T01–T09 continue on `feature/documents`, based on `develop` after the accounts PR was merged.
 - Keep task changes reviewable and commit them after shared review.
 - T09 prepares the documents pull request into `develop`.
-- T09 uses a verified checkpoint commit to open the draft PR; shared review is still required before merging or starting T10.
+- T09–T13 use verified checkpoint commits to open draft PRs; shared review is still required before merging or starting the next task.
 - T10–T13 each use a feature branch from updated `develop` after prerequisites have been merged. Their pull requests also target `develop`.
 - T14 uses a release branch for the agreed version, merges into `main` and back into `develop`, and tags the release.
 - Do not merge or publish a release before its review checkpoint.
@@ -27,13 +27,30 @@
 | T07 | Resilient document metadata caching | Mandatory | Completed; reviewed by user |
 | T08 | OpenAPI, Swagger, and user documentation | Mandatory | Completed; reviewed by user |
 | T09 | Mandatory integration checks and documents PR | Mandatory | Completed; reviewed by user; merged into develop |
-| T10 | Audit logging | Optional, included in scope | Verification complete; awaiting shared review |
-| T11 | Nginx deployment with Gunicorn | Optional, included in scope | Pending |
+| T10 | Audit logging | Optional, included in scope | Completed; reviewed by user; merged into develop |
+| T11 | Nginx deployment with Gunicorn | Optional, included in scope | Verified; awaiting shared user review |
 | T12 | Celery background document storage | Optional, included in scope | Pending |
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Pending |
 | T14 | Final regression checks and Git Flow release | Delivery | Pending |
 
-## Review Checkpoint — T10
+## Review Checkpoint — T11
+
+- Started `feature/nginx-deployment` from updated `develop` (`4962201`) after the user's T10 approval and PR #4 merge. Hold before merging T11 or starting T12 until shared review is approved.
+- Added a digest-pinned, non-root Nginx container as the loopback port 8000 entrypoint. Gunicorn remains internal. Backend startup collects public static assets into a project-owned volume mounted read-only in Nginx; private images remain in MinIO.
+- Preserved original Host/port, JWT/error headers and upstream responses; overwrite forwarded scheme/client headers, disable API caching/retries, and resolve the backend through Docker DNS. Trusted-proxy behavior is opt-in outside Compose. An 11 MiB total-body limit allows the existing 10 MiB image limit plus multipart overhead.
+- Added seven regressions: two disposable-stack isolation guards and five subprocess tests of actual Django settings/middleware, including trusted HTTPS, redirects, and secure session/CSRF cookies. The initial focused run reproduced five missing-behavior failures before implementation; all 13 focused tests now pass.
+- Full disposable integration passed **204 PostgreSQL tests** without skips, fresh startup/migrations and warning-free OpenAPI validation. Live checks verified static bytes/MIME, Swagger, JWT/host errors, pagination ports, spoofed forwarding headers, exact 10 MiB upload/download bytes, API 400 at 10 MiB + 1 and proxy 413 for oversized requests, Redis/MinIO outages/recovery, signed-URL expiry, backend gateway failure and recreation recovery without restarting Nginx, and all **23 durable audit events**. Cleanup preserved every pre-existing volume.
+- The first backend-outage probe expected only 502 and received 504. Both are valid upstream gateway failures, so the expectation now accepts either while still requiring static availability and successful backend recovery. The complete integration rerun then passed.
+- Updated the main stack and repeated all **204 tests** without skips. Migration drift, warning-free schema validation and active Nginx syntax checks passed. The browser rendered Swagger's API title, Authorize control and Authentication/Documents/Users groups through the actual proxy.
+- Added operator-applied production Compose/TLS examples and HTTPS deployment instructions. A disposable self-signed certificate validated TLS syntax and certificate readability as the non-root Nginx user; Compose merge checks confirmed secure settings, public 80/443 ports, an internal backend and read-only mounts. No public deployment or certificate issuance/renewal was performed.
+- One independent whole-feature review found no Critical or Important issues and independently passed all 13 focused tests. Two **Minor test-coverage improvements** are deferred: force/assert a changed backend IP during recreation (Docker may reuse it), and explicitly assert download `Cache-Control: private, no-store` through the live proxy. Current DNS configuration supports address changes and existing Django tests cover the no-store response; the deployed tests do not prove those two stronger assertions.
+- Production certificate lifecycle, external TLS terminator trust, WebSocket upgrades, asynchronous storage and final release remain separate responsibilities/tasks. Proxy health checks Nginx itself; backend health is separate. Normal Nginx error logs remain diagnostic, while the access-log format excludes query strings/headers/bodies.
+- Verified implementation checkpoint `dbd67c6` is pushed in draft [PR #5](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/5) into `develop`; the shared-review gate remains pending.
+
+## Completed Review — T10
+
+- The user approved T10. [PR #4](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/4) was marked ready and merged into `develop` with merge commit `4962201`, after repeating all 197 tests. GitHub reported a clean merge with no pending/failing checks or review objections.
+- T11 starts on `feature/nginx-deployment` from that updated `develop` commit.
 
 - Started `feature/audit-logging` from `develop` after the user's T09 approval and PR #3 merge (`580197c`).
 - Added `DocumentAuditEvent` and migration 0003. Events store actor/document id snapshots, allowlisted action and outcome, UTC time, and HTTP status. IDs survive document/user deletion; no body, header, filename, object key, credential, URL, or exception text is retained.
@@ -45,7 +62,7 @@
 - Rebuilt the main backend, applied migration 0003 on the existing database, and repeated all 197 tests without skips. Migration drift and warning-free OpenAPI checks passed again.
 - One independent whole-feature review found no Critical, Important, or Minor findings and independently passed all 24 focused tests. README provides shell inspection instructions and the audit scope/limits.
 - Failure-event persistence remains best effort during a database outage/process crash. URL issuance does not prove receipt or transfer. Internal calls may have a null actor; framework failures outside the DRF handler boundary, privileged audit edits, retention automation, historical backfill, and an audit endpoint remain outside this feature.
-- Prepare the verified checkpoint as a draft PR into `develop`; hold for shared user review before merging or starting T11.
+- Verified checkpoint `68f634d` was reviewed and merged through PR #4. The remaining optional features and release retain their own review gates.
 
 ## Completed Review — T09
 
@@ -323,7 +340,7 @@
 - [x] Implement the smallest model/writer/mixin/service changes and watch those tests pass.
 - [x] Run the full PostgreSQL suite, migration drift/OpenAPI checks, and disposable real-service integration with durable audit assertions.
 - [x] Obtain one independent review of the complete T10 branch; resolve Important/Critical findings in one test-backed pass and record any remaining limitations.
-- [ ] Commit/push the verified review checkpoint, open a draft PR into `develop`, and hold before merge/T11 for shared user review. The user's authorization to commit whenever necessary covers the checkpoint needed to make that draft concrete.
+- [x] Commit/push the verified review checkpoint, open a draft PR into `develop`, and hold before merge/T11 for shared user review. Completed through PR #4, subsequently approved and merged by the user.
 
 ### Task 11: T11 — Nginx deployment
 
@@ -331,6 +348,18 @@
 - Support static assets, multipart upload limits including request overhead, and clear production/HTTPS configuration instructions.
 - Verify proxy routing, Swagger assets, errors, and document uploads.
 - Complete a dedicated feature PR/review.
+- Serve the existing public API port 8000 through a non-root Nginx container listening internally on 8080. Gunicorn keeps its current internal 8000 listener without publishing a host port. MinIO's external signing endpoint stays separately configured.
+- Collect static assets at backend startup into a project-owned `static_data` volume; Nginx mounts it read-only. Use a pinned official Nginx image and copied configuration, not host configuration bind mounts.
+- Use an 11 MiB request limit to accept 10 MiB files plus multipart overhead. Verify exact-limit success, API rejection at 10 MiB + 1, and Nginx 413 beyond its total-body limit. Nginx responses before the API boundary do not create audit events.
+- Preserve original Host including its public port, paths/query parameters, JWT headers, JSON errors and authentication/no-store headers. Overwrite forwarded scheme/client headers, trust the scheme only in the isolated Compose backend, and never cache API responses or automatically retry mutations. Resolve Docker backend addresses dynamically for recovery after recreation.
+- Add static/health/routing/host-spoof/large-upload/error/recovery checks to `scripts/integration_check.py` and focused `scripts/proxy_checks.py`, preserving exact audit assertions and disposable resource safeguards. Accept gateway 502/504 for unavailable/timed-out upstreams. Adapt isolation tests to five services, shared project-owned static volume, no backend publishing and read-only proxy mounts.
+- Keep local HTTP startup convenient. Document concrete TLS server and Compose override examples using operator-supplied certificates, production host/debug/cookie/redirect settings, and a separately reachable HTTPS MinIO endpoint. No public deployment, certificate issuance or VPN/security setting changes are part of T11.
+- Files: new `docker/nginx/Dockerfile`, `nginx.conf`, `default.conf`, `proxy-locations.conf`, `production.conf.example`, and `compose.production.yaml.example`; update `Dockerfile`, backend entrypoint, settings, Compose and integration override, isolation/forwarding tests, integration controller, Makefile, README and checklists.
+- [x] Write and run failing proxy HTTP/isolation/forwarding regressions before implementation.
+- [x] Implement proxy/static/header/settings changes and pass the focused regressions.
+- [x] Run full PostgreSQL, migration/schema checks and the real disposable integration through Nginx, including large uploads, static bytes, backend outage/recreation and audit persistence.
+- [x] Obtain one independent whole-T11 review and resolve Important/Critical findings in one test-backed pass. No blocking findings; two Minor coverage suggestions are recorded above.
+- [x] Commit/push a verified draft PR into `develop`; hold before merge/T12 for shared user review. PR #5 is open in draft; shared user review is pending.
 
 ### Task 12: T12 — Background storage
 

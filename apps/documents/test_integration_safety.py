@@ -13,10 +13,15 @@ class IntegrationIsolationTests(SimpleTestCase):
             "volumes": {
                 "postgres_data": {"name": f"{self.project}_postgres_data"},
                 "minio_data": {"name": f"{self.project}_minio_data"},
+                "static_data": {"name": f"{self.project}_static_data"},
             },
             "networks": {"default": {"name": f"{self.project}_default"}},
             "services": {
-                "backend": {"ports": [{"host_ip": "127.0.0.1", "target": 8000, "published": "28000"}]},
+                "backend": {"volumes": [{"type": "volume", "source": "static_data", "target": "/app/staticfiles"}]},
+                "nginx": {
+                    "ports": [{"host_ip": "127.0.0.1", "target": 8080, "published": "28000"}],
+                    "volumes": [{"type": "volume", "source": "static_data", "target": "/srv/static", "read_only": True}],
+                },
                 "postgres": {"volumes": [{"type": "volume", "source": "postgres_data", "target": "/var/lib/postgresql/data"}]},
                 "redis": {},
                 "minio": {"volumes": [{"type": "volume", "source": "minio_data", "target": "/data"}]},
@@ -45,8 +50,16 @@ class IntegrationIsolationTests(SimpleTestCase):
     def test_rejects_publishing_test_services_to_other_interfaces(self):
         for host in ("0.0.0.0", "::", None):
             with self.subTest(host=host):
-                self.config["services"]["backend"]["ports"][0]["host_ip"] = host
+                self.config["services"]["nginx"]["ports"][0]["host_ip"] = host
                 self.assertFalse(is_isolated_config(self.config, self.project))
+
+    def test_rejects_bypassing_the_proxy_with_a_published_backend_port(self):
+        self.config["services"]["backend"]["ports"] = [{"host_ip": "127.0.0.1", "target": 8000, "published": "28001"}]
+        self.assertFalse(is_isolated_config(self.config, self.project))
+
+    def test_rejects_writable_proxy_access_to_static_assets(self):
+        self.config["services"]["nginx"]["volumes"][0]["read_only"] = False
+        self.assertFalse(is_isolated_config(self.config, self.project))
 
     def test_rejects_a_shared_network_or_fixed_container_name(self):
         network = deepcopy(self.config)

@@ -1,6 +1,7 @@
 """Run disposable, real-service integration checks without touching the working stack."""
 
 import json
+from hashlib import sha256
 from pathlib import Path
 import re
 import secrets
@@ -18,13 +19,24 @@ from uuid import uuid4
 from xml.etree import ElementTree
 import zlib
 
+if __package__:
+    from .proxy_checks import check_forwarded_links, check_proxy_http, check_upload_limits
+else:
+    from proxy_checks import check_forwarded_links, check_proxy_http, check_upload_limits
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def is_isolated_config(config, project):
     if not re.fullmatch(r"sanaap-t09-[0-9a-f]{10}", project) or config.get("name") != project:
         return False
-    if set(config.get("services", {})) != {"backend", "postgres", "redis", "minio"}:
+    if set(config.get("services", {})) != {"backend", "nginx", "postgres", "redis", "minio"}:
+        return False
+    if config["services"]["backend"].get("ports"):
+        return False
+    proxy_mounts = config["services"]["nginx"].get("volumes", [])
+    if not any(mount.get("source") == "static_data" and mount.get("target") == "/srv/static"
+               and mount.get("read_only") for mount in proxy_mounts):
         return False
     for category in ("volumes", "networks"):
         if not config.get(category):
@@ -60,21 +72,24 @@ class HTTPChecks:
         self.origin = f"http://127.0.0.1:{port}"
         self.opener = build_opener(ProxyHandler({}))
 
-    def http(self, method, url, *, body=None, headers=None, expected=200):
+    def http(self, method, url, *, body=None, headers=None, expected=200, return_headers=False):
         request = Request(url, data=body, headers=headers or {}, method=method)
         try:
             with self.opener.open(request, timeout=60) as response:
                 code, payload = response.status, response.read()
+                received_headers = dict((key.lower(), value) for key, value in response.headers.items())
         except HTTPError as error:
             code, payload = error.code, error.read()
+            received_headers = dict((key.lower(), value) for key, value in error.headers.items())
         except URLError as error:
             raise RuntimeError(f"HTTP transport failed ({type(error.reason).__name__}).") from None
-        if code != expected:
+        accepted = (expected,) if isinstance(expected, int) else expected
+        if code not in accepted:
             raise RuntimeError(f"{method} request expected HTTP {expected}, received {code}.")
-        return payload
+        return (payload, received_headers) if return_headers else payload
 
-    def api(self, method, path, *, token=None, data=None, image=None, expected=200):
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
+    def api(self, method, path, *, token=None, data=None, image=None, expected=200, headers=None):
+        headers = {**({"Authorization": f"Bearer {token}"} if token else {}), **(headers or {})}
         body = None
         if image is not None:
             boundary = f"sanaap-{uuid4().hex}"
@@ -144,21 +159,24 @@ def main():
         write_environment()
         source_project = json.loads(run(base + ["config", "--format", "json"]))["name"]
         environment.update(INTEGRATION_BACKEND_IMAGE=f"{source_project}-backend",
-                           INTEGRATION_MINIO_IMAGE=f"{source_project}-minio")
+                           INTEGRATION_MINIO_IMAGE=f"{source_project}-minio",
+                           INTEGRATION_NGINX_IMAGE=f"{source_project}-nginx")
         write_environment()
         config = json.loads(run(compose + ["config", "--format", "json"]))
         if not is_isolated_config(config, project):
             raise RuntimeError("Refusing a Compose configuration that is not isolated.")
         before_volumes = set(run(["docker", "volume", "ls", "--format", "{{.Name}}"]).splitlines())
         print(f"Integration project: {project}; credentials stay in a private temporary directory.", flush=True)
-        print("Building current backend/MinIO images...", flush=True)
-        run(base + ["build", "backend", "minio"], timeout=600)
+        print("Building current backend/MinIO/Nginx images...", flush=True)
+        run(base + ["build", "backend", "minio", "nginx"], timeout=600)
         active = True
         print("Starting a clean, isolated stack...", flush=True)
         run(compose + ["up", "-d", "--no-build", "--wait", "--wait-timeout", "180"])
         run(compose + ["exec", "-T", "backend", "python", "manage.py", "check"])
         run(compose + ["exec", "-T", "backend", "python", "manage.py", "makemigrations", "--check", "--dry-run"])
         run(compose + ["exec", "-T", "backend", "python", "manage.py", "migrate", "--check"])
+        run(compose + ["exec", "-T", "nginx", "nginx", "-t"])
+        assert run(compose + ["exec", "-T", "nginx", "id", "-u"]).strip() != "0"
         print("Fresh startup, migrations and private bucket initialization passed.", flush=True)
         regression = run(compose + ["run", "--rm", "--no-deps", "backend", "python", "manage.py", "test", "--noinput"])
         count = re.search(r"Ran (\d+) tests?", regression)
@@ -178,7 +196,13 @@ def main():
             {"password": password},
         )
         client = HTTPChecks(api_port)
-        client.http("GET", client.origin + "/api/docs/")
+        css = check_proxy_http(client)
+        expected_css_hash = shell(
+            "from pathlib import Path; from hashlib import sha256; import django.contrib.admin; "
+            "print(sha256((Path(django.contrib.admin.__file__).parent / 'static/admin/css/base.css').read_bytes()).hexdigest())"
+        ).splitlines()[-1]
+        assert sha256(css).hexdigest() == expected_css_hash
+        print("Non-root Nginx, static bytes/MIME types, Swagger, host validation and JWT error headers passed.", flush=True)
         client.api("GET", "/api/schema/?format=json")
         client.api("GET", "/api/v1/documents/", expected=401)
         client.api("GET", "/api/v1/documents/", token="invalid-token", expected=401)
@@ -231,6 +255,9 @@ def main():
         print("Redis outage and recovery passed without stale metadata or failed writes.", flush=True)
 
         second = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Replacement image"}, image=original, expected=201)
+        check_forwarded_links(client, viewer)
+        boundary_id = check_upload_limits(client, image=original, editor=editor, admin=admin["access"])
+        print("Public Host/port and forwarded-header spoof checks, 10 MiB transfer, API400 and proxy413 passed.", flush=True)
         second_detail = f"/api/v1/documents/{second['id']}/"
         old_url = client.api("GET", second_detail + "download/", token=viewer)["download_url"]
         updated = client.api("PATCH", second_detail, token=editor, image=replacement)
@@ -277,6 +304,21 @@ def main():
               f"assert not default_storage.exists({first_key!r}) and not default_storage.exists({second_key!r}); "
               f"default_storage.delete({orphan_key!r})")
         print("Actual URL expiry, logout semantics and successful document/object deletion passed.", flush=True)
+        print("Stopping only disposable backend to check gateway errors/static availability and recreation recovery...", flush=True)
+        run(compose + ["stop", "--timeout", "3", "backend"])
+        client.http("GET", client.origin + "/api/docs/", expected=(502, 504))
+        assert client.http("GET", client.origin + "/static/admin/css/base.css") == css
+        run(compose + ["up", "-d", "--force-recreate", "--no-deps", "--wait", "backend"])
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                client.http("GET", client.origin + "/api/docs/")
+                break
+            except RuntimeError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(1)
+        print("Backend gateway error and recreation recovery passed without restarting Nginx.", flush=True)
         expected_events = [
             ["integration-editor", "create", row["id"], "success", 201]
             for row in (document, second, orphan)
@@ -296,7 +338,13 @@ def main():
         ] + [
             ["integration-viewer", "download_url", second["id"], "success", 200]
             for _ in range(3)
-        ] + [["integration-viewer", "download_url", orphan["id"], "success", 200]]
+        ] + [
+            ["integration-viewer", "download_url", orphan["id"], "success", 200],
+            ["integration-editor", "create", boundary_id, "success", 201],
+            ["integration-editor", "download_url", boundary_id, "success", 200],
+            ["integration-editor", "create", None, "failure", 400],
+            ["integration-admin", "delete", boundary_id, "success", 204],
+        ]
         shell(
             "import json, sys; from collections import Counter; from django.contrib.auth import get_user_model; "
             "from apps.documents.models import Document, DocumentAuditEvent; "
@@ -304,10 +352,10 @@ def main():
             "expected = Counter((identities[row[0]], *row[1:]) for row in json.load(sys.stdin)); "
             "actual = Counter(DocumentAuditEvent.objects.values_list('actor_id', 'action', 'document_id', 'outcome', 'status_code')); "
             "assert actual == expected and not Document.objects.exists(); "
-            "assert DocumentAuditEvent.objects.count() == 19",
+            "assert DocumentAuditEvent.objects.count() == 23",
             expected_events,
         )
-        print("All 19 durable audit events match authenticated actors and outcomes, including deleted documents.", flush=True)
+        print("All 23 durable audit events match authenticated actors and outcomes, including deleted documents.", flush=True)
     finally:
         if active:
             config = json.loads(run(compose + ["config", "--format", "json"]))

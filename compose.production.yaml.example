@@ -1,0 +1,31 @@
+# Operator-applied example; supply real host/certificates before running.
+services:
+  backend:
+    environment:
+      DJANGO_DEBUG: "False"
+      DJANGO_SECURE_SSL_REDIRECT: "True"
+      DJANGO_SECURE_COOKIES: "True"
+
+  nginx:
+    ports: !override
+      - "0.0.0.0:80:8080"
+      - "0.0.0.0:443:8443"
+    volumes:
+      - type: bind
+        source: ./docker/nginx/production.conf.example
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${TLS_CERTIFICATE_PATH:?set an absolute certificate path}
+        target: /run/tls/fullchain.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${TLS_PRIVATE_KEY_PATH:?set an absolute private key path}
+        target: /run/tls/privkey.pem
+        read_only: true
+        bind:
+          create_host_path: false

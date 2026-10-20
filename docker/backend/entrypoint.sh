@@ -4,5 +4,6 @@ set -eu
 python manage.py check
 python manage.py migrate --noinput
 python manage.py initialize_buckets
+python manage.py collectstatic --noinput
 
 exec "$@"

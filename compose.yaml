@@ -9,8 +9,11 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:?required}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:?required}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT_URL: http://minio:9000
-    ports:
-      - "127.0.0.1:8000:8000"
+      DJANGO_TRUST_PROXY: "True"
+    expose:
+      - "8000"
+    volumes:
+      - static_data:/app/staticfiles
     depends_on:
       postgres:
         condition: service_healthy
@@ -28,7 +31,23 @@ services:
       timeout: 3s
       retries: 20
       start_period: 30s
-      
+
+  nginx:
+    build:
+      context: ./docker/nginx
+    ports:
+      - "127.0.0.1:8000:8080"
+    volumes:
+      - static_data:/srv/static:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   postgres:
     image: postgres:17
     environment:
@@ -87,3 +106,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  static_data:
