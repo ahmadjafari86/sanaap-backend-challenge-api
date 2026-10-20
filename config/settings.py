@@ -10,22 +10,29 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
+
+import environ
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+env = environ.Env(
+    DJANGO_DEBUG=(bool, False),
+)
+
+environ.Env.read_env(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-qsf(7i%nlbk8epak)96!m&9*p_$dqk6b1f@p_xu#@a!*a-f(qb'
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
+SECRET_KEY = env("DJANGO_SECRET_KEY")
+DEBUG = env("DJANGO_DEBUG")
+ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
 
 # Application definition
@@ -41,6 +48,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "django_filters",
     "drf_spectacular",
+    "django_minio_backend.apps.DjangoMinioBackendConfig",
     "apps.accounts.apps.AccountsConfig",
     "apps.documents.apps.DocumentsConfig",
 ]
@@ -81,10 +89,51 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    "default": env.db("DATABASE_URL"),
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("REDIS_URL"),
+        "TIMEOUT": 60,
+        "KEY_PREFIX": "sanaap",
+        "OPTIONS": {
+            "socket_connect_timeout": 2,
+            "socket_timeout": 2,
+        },
+    },
+}
+
+
+minio_endpoint = urlsplit(env("MINIO_ENDPOINT_URL"))
+minio_public_endpoint = urlsplit(env("MINIO_PUBLIC_ENDPOINT_URL"))
+minio_bucket = env("MINIO_BUCKET_NAME")
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django_minio_backend.models.MinioBackend",
+        "OPTIONS": {
+            "MINIO_ENDPOINT": minio_endpoint.netloc,
+            "MINIO_USE_HTTPS": minio_endpoint.scheme == "https",
+            "MINIO_EXTERNAL_ENDPOINT": minio_public_endpoint.netloc,
+            "MINIO_EXTERNAL_ENDPOINT_USE_HTTPS": (
+                minio_public_endpoint.scheme == "https"
+            ),
+            "MINIO_ACCESS_KEY": env("MINIO_ROOT_USER"),
+            "MINIO_SECRET_KEY": env("MINIO_ROOT_PASSWORD"),
+            "MINIO_REGION": "us-east-1",
+            "MINIO_DEFAULT_BUCKET": minio_bucket,
+            "MINIO_PRIVATE_BUCKETS": [minio_bucket],
+            "MINIO_PUBLIC_BUCKETS": [],
+            "MINIO_URL_EXPIRY_HOURS": timedelta(minutes=5),
+            "MINIO_CONSISTENCY_CHECK_ON_START": False,
+            "MINIO_BUCKET_CHECK_ON_SAVE": False,
+        },
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
 }
 
 
