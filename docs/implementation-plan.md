@@ -5,31 +5,37 @@
 **Execution:** Guided implementation in the current conversation.
 
 ## 1. Project Setup
-- [ ] Add .gitignore, dependency files, .env.example, and .dockerignore.
-- [ ] Create Django project config and apps accounts and documents.
-- [ ] Configure PostgreSQL, Redis, and private MinIO storage.
-- [ ] Add Dockerfile and Docker Compose with persistent volumes.
-- [ ] Verify: docker compose config
-- [ ] Verify: docker compose run --rm backend python manage.py check
-- [ ] Commit the working setup.
+- [x] Add .gitignore, dependency files, .env.example, and .dockerignore.
+- [x] Create Django project config and apps accounts and documents.
+- [x] Configure PostgreSQL, Redis, and private MinIO storage.
+- [x] Add Dockerfile and Docker Compose with persistent volumes.
+- [x] Verify: docker compose config (runs through `make up`).
+- [x] Verify Django system checks during backend startup and test runs.
+- [x] Commit the working setup.
 
 ## 2. Users, Roles, and JWT
-- [ ] Define the custom user model before the first migration.
-- [ ] Add admin, editor, and viewer roles; default to viewer.
-- [ ] Test login, refresh, refresh-token logout, and anonymous rejection.
-- [ ] Test that only admins can create users and change roles.
-- [ ] Implement Simple JWT and admin-only user management endpoints.
-- [ ] Keep application roles separate from staff and superuser flags.
-- [ ] Verify tests and commit.
+- [x] Define the custom user model before the first migration.
+- [x] Add admin, editor, and viewer roles; default to viewer.
+- [x] Test login, refresh, refresh-token logout, and anonymous rejection.
+- [x] Test admin user creation and role changes, and editor/viewer creation denial.
+- [x] Test that anonymous users cannot create users or change roles, and editors/viewers cannot change roles.
+- [x] Implement Simple JWT and admin-only user management endpoints.
+- [x] Keep application roles separate from staff and superuser flags.
+- [x] Verify tests and commit.
 
 ## 3. Document Operations
-- [ ] Add document metadata model and migrations.
-- [ ] Test the complete role/action permission matrix.
-- [ ] Test rejection of invalid images and files over 10 MiB.
+- [x] Add document metadata model and migrations.
+- [x] Implement and unit-test the role/method permission matrix, including anonymous and unknown-role rejection.
+- [ ] Test the complete role/action matrix through document API endpoints, including downloads.
+- [x] Test rejection of invalid images and files over 10 MiB, including the exact size boundary.
+- [x] Implement document creation through the configured MinIO storage backend.
 - [ ] Implement shared document CRUD for JPEG and PNG images.
-- [ ] Use unique private object keys and presigned URLs valid for 60 seconds.
-- [ ] Test database and storage failures during upload and replacement.
+- [x] Generate UUID-based object keys for document uploads.
+- [ ] Issue private presigned download URLs valid for 60 seconds.
+- [x] Test upload, database, and cleanup failures during document creation.
+- [ ] Test database and storage failures during document replacement.
 - [ ] Preserve the previous file when replacement fails.
+- [x] Verify the document foundation (27 project tests passed).
 - [ ] Verify tests and commit.
 
 ## 4. Querying, Caching, and API Documentation
@@ -53,7 +59,8 @@
 
 ## 6. Optional Features
 - [ ] Audit log: actor, action, document identifier, time, and outcome.
-- [ ] Gunicorn application server and Nginx reverse proxy.
+- [x] Configure Gunicorn as the application server.
+- [ ] Add Nginx as the reverse proxy.
 - [ ] Celery storage tasks with shared staging, bounded retries,
       idempotency, and PENDING/READY/FAILED states.
 - [ ] Authenticated Channels notifications after successful commits.
