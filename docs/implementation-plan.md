@@ -41,6 +41,7 @@
 - [x] Test rejection of invalid images and files over 10 MiB, including the exact size boundary.
 - [x] Implement document creation through the configured MinIO storage backend.
 - [x] Implement and test the upload API, including JWT, role access, validation, metadata, and safe failure responses (T01; reviewed by user).
+- [x] Implement and test shared document list/detail reads, deterministic ordering, JWT/role access, and HEAD/OPTIONS (T02; reviewed by user).
 - [ ] Implement shared document CRUD for JPEG and PNG images.
 - [x] Generate UUID-based object keys for document uploads.
 - [ ] Issue private presigned download URLs valid for 60 seconds.

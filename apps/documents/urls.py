@@ -1,9 +1,10 @@
 from django.urls import path
 
-from .views import DocumentCreateView
+from .views import DocumentDetailView, DocumentListCreateView
 
 app_name = "documents"
 
 urlpatterns = [
-    path("", DocumentCreateView.as_view(), name="document-list"),
+    path("", DocumentListCreateView.as_view(), name="document-list"),
+    path("<int:pk>/", DocumentDetailView.as_view(), name="document-detail"),
 ]

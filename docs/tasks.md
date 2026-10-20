@@ -18,7 +18,7 @@
 | ID | Deliverable | Type | Status |
 | --- | --- | --- | --- |
 | T01 | Document upload API | Mandatory | Completed; reviewed by user |
-| T02 | Shared document list and detail API | Mandatory | Pending |
+| T02 | Shared document list and detail API | Mandatory | Completed; reviewed by user |
 | T03 | Metadata updates and safe image replacement | Mandatory | Pending |
 | T04 | Document deletion after successful database commit | Mandatory | Pending |
 | T05 | Private download URLs valid for 60 seconds | Mandatory | Pending |
@@ -32,6 +32,19 @@
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Pending |
 | T14 | Final regression checks and Git Flow release | Delivery | Pending |
 
+## Completed Review — T02
+
+- The user approved the shared review of T02 and authorized proceeding to T03 after its commit.
+- Added shared metadata reads at `GET /api/v1/documents/` and `GET /api/v1/documents/<id>/` for all three roles, regardless of creator.
+- The list orders by descending creation time, then descending id. Missing documents return 404; invalid/anonymous/inactive authentication and unknown roles are rejected.
+- GET, HEAD, and OPTIONS are covered. T01 multipart upload behavior remains intact.
+- Added 12 read API tests. Before implementation, missing list/detail behavior failed with 405/404; all 26 upload/read tests then passed locally.
+- Verification: `docker compose exec -T backend python manage.py test --noinput` — all 53 tests passed against PostgreSQL.
+- Verification: `docker compose exec -T backend python manage.py makemigrations --check --dry-run` — no changes detected. `git diff --check` also passed.
+- Independent read-only code review found no Critical, Important, or Minor issues and independently passed the 26 upload/read tests.
+- Filtering/pagination (T06), caching (T07), full schema/docs (T08), and real MinIO checks (T09) remain assigned to their existing tasks. T02 introduces no storage I/O on reads.
+- Verification was repeated successfully before committing T02: all 53 PostgreSQL tests passed.
+
 ## Completed Review — T01
 
 - The user approved T01 and authorized task-scoped commits before proceeding to T02.
@@ -42,6 +55,7 @@
 - Verification: `docker compose exec -T backend python manage.py makemigrations --check --dry-run` — no changes detected.
 - Storage is mocked in these tests; real MinIO upload/download and private-bucket checks remain part of T09.
 - Verification was repeated successfully before committing T01: all 41 PostgreSQL tests passed.
+- Commit: `c6d9b76` — `feat(documents): add authenticated upload API`.
 
 ## Acceptance Criteria
 
@@ -62,6 +76,14 @@
 - Anonymous requests are rejected. Missing documents return 404.
 - Return metadata with a deterministic list order; do not generate or expose download URLs here.
 - Exercise the read role/action matrix through the actual API.
+- Interfaces: `GET /api/v1/documents/` returns the shared metadata list; `GET /api/v1/documents/<id>/` returns one document using `DocumentSerializer` from T01.
+- Order: newest `created_at` first, with descending `id` as the tie-breaker. Pagination/filtering remain in T06.
+- Reuse JWT authentication and `DocumentRolePermission`. Support GET, HEAD, and OPTIONS while preserving T01 upload behavior.
+- Reject unknown application roles, invalid JWTs, and inactive JWT users; never restrict reads to the creator.
+- Files: modify `apps/documents/views.py` and `apps/documents/urls.py`; add `apps/documents/test_read_api.py`.
+- Test-first: run the new read tests before implementation; expect missing list/detail behavior to fail with 405/404.
+- Verification: run the full PostgreSQL suite and migration check inside Docker; expect a green suite and no missing migrations.
+- Complete shared user review before committing T02 and moving to T03.
 
 ### Task 3: T03 — Metadata updates and safe image replacement
 

@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from urllib3.exceptions import HTTPError
 
 from .exceptions import DocumentCreationUnavailable
+from .models import Document
 from .permissions import DocumentRolePermission
 from .serializers import DocumentSerializer, DocumentUploadSerializer
 from .services import create_document
@@ -15,13 +16,19 @@ from .services import create_document
 logger = logging.getLogger(__name__)
 
 
-class DocumentCreateView(generics.GenericAPIView):
-    serializer_class = DocumentUploadSerializer
+class DocumentListCreateView(generics.ListCreateAPIView):
+    queryset = Document.objects.order_by("-created_at", "-id")
+    serializer_class = DocumentSerializer
     permission_classes = [DocumentRolePermission]
     parser_classes = [MultiPartParser, FormParser]
-    http_method_names = ["post", "options"]
+    http_method_names = ["get", "head", "post", "options"]
 
-    def post(self, request, *args, **kwargs):
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return DocumentUploadSerializer
+        return super().get_serializer_class()
+
+    def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -39,3 +46,10 @@ class DocumentCreateView(generics.GenericAPIView):
             DocumentSerializer(document, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class DocumentDetailView(generics.RetrieveAPIView):
+    queryset = Document.objects.all()
+    serializer_class = DocumentSerializer
+    permission_classes = [DocumentRolePermission]
+    http_method_names = ["get", "head", "options"]
