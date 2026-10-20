@@ -99,3 +99,7 @@ def delete_document(*, document_id):
         object_key = document.object_key
         document.delete()
         transaction.on_commit(partial(_delete_document_object, object_key))
+
+
+def get_document_download_url(*, document):
+    return default_storage.url(document.object_key)

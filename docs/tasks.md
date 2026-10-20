@@ -21,7 +21,7 @@
 | T02 | Shared document list and detail API | Mandatory | Completed; reviewed by user |
 | T03 | Metadata updates and safe image replacement | Mandatory | Completed; reviewed by user |
 | T04 | Document deletion after successful database commit | Mandatory | Completed; reviewed by user |
-| T05 | Private download URLs valid for 60 seconds | Mandatory | Pending |
+| T05 | Private download URLs valid for 60 seconds | Mandatory | Completed; reviewed by user |
 | T06 | Title search, creator filtering, and pagination | Mandatory | Pending |
 | T07 | Resilient document metadata caching | Mandatory | Pending |
 | T08 | OpenAPI, Swagger, and user documentation | Mandatory | Pending |
@@ -31,6 +31,21 @@
 | T12 | Celery background document storage | Optional, included in scope | Pending |
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Pending |
 | T14 | Final regression checks and Git Flow release | Delivery | Pending |
+
+## Completed Review — T05
+
+- The user approved the shared review of T05 and authorized proceeding to T06 after its commit.
+- Added `GET /api/v1/documents/<id>/download/` for all three authenticated roles, including another user's documents. Authentication, role validation, and the database lookup precede URL signing.
+- Returns only `download_url` and `expires_in: 60`; the configured `django-minio-backend` signs for the external MinIO endpoint and the private bucket.
+- Set the signing expiry to exactly 60 seconds, explicitly disabled backend URL caching, and added HTTP cache-prevention headers to the download endpoint.
+- Missing documents return 404. Known signing/document-lookup database failures return safe 503 responses without logging exception details or signed URLs. OPTIONS does not sign; HEAD and write methods are unsupported.
+- Added 14 tests using real local MinIO SDK signing, dummy credentials, and an HTTP client that rejects any network call. Covered roles/JWT, expiry/external endpoint, repeated signing without caching, ignored client TTL overrides, and safe error responses.
+- Test-first evidence: the new tests failed against the missing route before implementation, then all 14 passed locally.
+- Verification: `docker compose exec -T backend python manage.py test --noinput` — all 107 tests passed on PostgreSQL, with no skipped tests. Migration dry-run reported no changes; `git diff --check` passed.
+- Independent read-only code review found no Critical, Important, or Minor issues and independently passed all 14 focused download tests.
+- README explains bearer URL lifetime, access tokens after logout, application-role changes, object deletion/replacement, and the distinction between URL issuance and a completed transfer.
+- Real MinIO transfer and bucket-policy verification remain T09; metadata caching, schema, and audit remain T07, T08, and T10.
+- Verification was repeated successfully before committing T05: all 107 PostgreSQL tests passed.
 
 ## Completed Review — T04
 
@@ -45,6 +60,7 @@
 - Migration dry-run reported no changes; `git diff --check` passed. Independent read-only code review found no Critical, Important, or Minor issues.
 - Real MinIO checks, cache invalidation, full schema/docs, and audit records remain assigned to T09, T07, T08, and T10. Automatic orphan reconciliation remains a documented limitation.
 - Verification was repeated successfully before committing T04: all 93 PostgreSQL tests passed.
+- Commit: `7d811b3` — `feat(documents): add transactional admin-only deletion`.
 
 ## Completed Review — T03
 
@@ -151,6 +167,13 @@
 - URLs expire after exactly 60 seconds, use the client-reachable MinIO endpoint, and are never cached.
 - Keep the bucket private. Test unauthorized access, missing documents, and storage errors.
 - Document that issued URLs remain usable until expiry, including after logout or role changes.
+- Interface: `GET /api/v1/documents/<id>/download/` returns `download_url` and `expires_in: 60` after JWT/role validation and a database lookup.
+- Use the configured `django-minio-backend` through `default_storage.url()`, with a 60-second signing TTL and explicit `MINIO_URL_CACHING_ENABLED = False`.
+- Preserve the client-reachable external endpoint and private bucket configuration. Return HTTP cache-prevention headers, including `private` and `no-store`.
+- Only GET and OPTIONS are supported; HEAD does not issue a URL. Missing documents return 404, and known signing/database failures return safe 503 responses without logging credentials or generated URLs.
+- Test real local MinIO SDK signing with dummy credentials and a network-forbidden HTTP client, including expiry, external host, repeated signing, query-parameter TTL overrides, JWT/roles, and failure redaction.
+- Document bearer URL lifetime, access tokens after logout, role changes, and object deletion/replacement. URL issuance does not verify that a subsequent file transfer succeeds.
+- Run the full PostgreSQL suite and migration check, then stop for shared review before T06. Real MinIO transfer and bucket-policy verification remain T09.
 
 ### Task 6: T06 — Querying and pagination
 

@@ -18,3 +18,9 @@ class DocumentDeletionUnavailable(APIException):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     default_detail = "Document deletion is temporarily unavailable."
     default_code = "document_deletion_unavailable"
+
+
+class DocumentDownloadUnavailable(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "Document download is temporarily unavailable."
+    default_code = "document_download_unavailable"

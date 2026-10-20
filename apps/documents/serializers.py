@@ -34,6 +34,11 @@ class DocumentUpdateSerializer(DocumentUploadSerializer):
         return attrs
 
 
+class DocumentDownloadSerializer(serializers.Serializer):
+    download_url = serializers.URLField(read_only=True)
+    expires_in = serializers.IntegerField(read_only=True)
+
+
 class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document

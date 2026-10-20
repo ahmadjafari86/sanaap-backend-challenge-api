@@ -37,7 +37,7 @@
 ## 3. Document Operations
 - [x] Add document metadata model and migrations.
 - [x] Implement and unit-test the role/method permission matrix, including anonymous and unknown-role rejection.
-- [ ] Test the complete role/action matrix through document API endpoints, including downloads.
+- [x] Test the complete role/action matrix through document API endpoints, including downloads (T05 reviewed by user).
 - [x] Test rejection of invalid images and files over 10 MiB, including the exact size boundary.
 - [x] Implement document creation through the configured MinIO storage backend.
 - [x] Implement and test the upload API, including JWT, role access, validation, metadata, and safe failure responses (T01; reviewed by user).
@@ -46,7 +46,7 @@
 - [x] Implement and test admin-only deletion, rollback, after-commit cleanup, and replacement/deletion races (T04; reviewed by user).
 - [x] Implement shared document CRUD for JPEG and PNG images (T01–T04; reviewed by user).
 - [x] Generate UUID-based object keys for document uploads.
-- [ ] Issue private presigned download URLs valid for 60 seconds.
+- [x] Issue private presigned download URLs valid for 60 seconds (T05 reviewed by user).
 - [x] Test upload, database, and cleanup failures during document creation.
 - [x] Test database and storage failures during document replacement, including lost upload acknowledgements and cleanup failure.
 - [x] Preserve the previous file when replacement fails.
@@ -59,7 +59,8 @@
 - [ ] Cache document metadata for 60 seconds.
 - [ ] Test invalidation after update and deletion.
 - [ ] Test database fallback when Redis is unavailable.
-- [ ] Never cache presigned URLs; check permissions before cache access.
+- [x] Never cache presigned URLs in the storage backend or HTTP responses (T05 reviewed by user).
+- [ ] Check permissions before document metadata cache access (T07).
 - [ ] Add OpenAPI schema and Swagger UI.
 - [ ] Verify tests and commit.
 
@@ -69,7 +70,7 @@
 - [ ] Verify startup and migrations using a fresh Compose project.
 - [ ] Verify a real upload and download through MinIO.
 - [ ] Document setup, admin creation, endpoints, assumptions, and limitations.
-- [ ] Document presigned URL behavior after logout or role changes.
+- [x] Document presigned URL behavior after logout or role changes (T05 reviewed by user).
 - [ ] Merge through develop and prepare the main branch for delivery.
 
 ## 6. Optional Features

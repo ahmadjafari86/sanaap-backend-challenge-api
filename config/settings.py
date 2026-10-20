@@ -129,6 +129,9 @@ minio_endpoint = urlsplit(env("MINIO_ENDPOINT_URL"))
 minio_public_endpoint = urlsplit(env("MINIO_PUBLIC_ENDPOINT_URL"))
 minio_bucket = env("MINIO_BUCKET_NAME")
 
+DOCUMENT_DOWNLOAD_URL_TTL_SECONDS = 60
+MINIO_URL_CACHING_ENABLED = False
+
 STORAGES = {
     "default": {
         "BACKEND": "django_minio_backend.models.MinioBackend",
@@ -145,7 +148,9 @@ STORAGES = {
             "MINIO_DEFAULT_BUCKET": minio_bucket,
             "MINIO_PRIVATE_BUCKETS": [minio_bucket],
             "MINIO_PUBLIC_BUCKETS": [],
-            "MINIO_URL_EXPIRY_HOURS": timedelta(minutes=5),
+            "MINIO_URL_EXPIRY_HOURS": timedelta(
+                seconds=DOCUMENT_DOWNLOAD_URL_TTL_SECONDS,
+            ),
             "MINIO_CONSISTENCY_CHECK_ON_START": False,
             "MINIO_BUCKET_CHECK_ON_SAVE": False,
         },

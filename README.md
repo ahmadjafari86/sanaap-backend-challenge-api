@@ -46,6 +46,34 @@ Feature branches start from `develop` and return through pull requests.
 Release branches prepare delivery to `main` and are merged back into
 `develop`. Released versions are tagged.
 
+## Private document downloads
+
+An authenticated application admin, editor, or viewer can request
+`GET /api/v1/documents/<id>/download/` for any document, regardless of its creator.
+Include the access token in the `Authorization: Bearer <access-token>` header.
+The response contains `download_url` and `expires_in: 60`. Retrieve the image
+directly from `download_url` before it expires. The URL uses
+`MINIO_PUBLIC_ENDPOINT_URL`, which must be reachable by the client; the bucket
+remains private.
+
+JWT authentication, application-role checks, and the document lookup run before
+URL signing. Missing documents return HTTP 404; known signing or document-lookup
+database failures return a generic HTTP 503. Only GET and OPTIONS are supported;
+HEAD returns 405 without signing. URL responses use `Cache-Control: private,
+no-cache, no-store, must-revalidate`, and the backend does not cache signed URLs.
+Signing happens locally and does not check object existence or storage
+availability, so successful URL issuance does not guarantee a successful file
+transfer.
+
+Treat the signed URL as a temporary bearer credential: anyone holding it can
+retrieve its target until expiry, provided the object remains available. Logout
+blacklists the refresh token; an existing access token remains usable until its
+own expiry, including to request another URL. Deactivating a user or removing
+their permitted application role blocks new URL requests, but does not revoke
+previously issued URLs. Changing between admin, editor, and viewer preserves
+download access. Deleting or replacing an object can make its earlier URLs stop
+working before expiry. Avoid storing or logging signed URLs.
+
 ## Document storage consistency
 
 PostgreSQL transactions do not include MinIO operations. Each image replacement
