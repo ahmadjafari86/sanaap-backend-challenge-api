@@ -78,9 +78,9 @@
 - [ ] Prepare main for delivery through the final release checkpoint.
 
 ## 6. Optional Features
-- [x] Audit log: actor, action, document identifier, time, and outcome (T10 implemented and verified; shared review pending).
+- [x] Audit log: actor, action, document identifier, time, and outcome (T10 reviewed by user and merged into develop through PR #4).
 - [x] Configure Gunicorn as the application server.
-- [ ] Add Nginx as the reverse proxy.
+- [x] Add Nginx as the reverse proxy, serve collected static assets, verify upload/proxy boundaries, and document HTTPS configuration (T11 verified; awaiting shared user review).
 - [ ] Celery storage tasks with shared staging, bounded retries,
       idempotency, and PENDING/READY/FAILED states.
 - [ ] Authenticated Channels notifications after successful commits.

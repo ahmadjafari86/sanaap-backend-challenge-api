@@ -18,10 +18,10 @@ make up
 
 The command creates `.env` if missing, generates a Django secret key,
 builds the images, starts the services, applies database migrations,
-and initializes the MinIO buckets.
+initializes the MinIO buckets, and collects static assets.
 
 Services:
-- Backend: http://127.0.0.1:8000
+- API through Nginx: http://127.0.0.1:8000
 - Swagger UI: http://127.0.0.1:8000/api/docs/
 - OpenAPI schema: http://127.0.0.1:8000/api/schema/
 - MinIO object endpoint: http://127.0.0.1:19000
@@ -41,6 +41,21 @@ make down
 ```
 
 `make down` preserves database and object-storage volumes.
+
+Nginx runs as an unprivileged user and forwards requests to Gunicorn on the
+private Compose network. Gunicorn has no published host port. A shared
+`static_data` volume is writable by the backend's `collectstatic` command and
+read-only in Nginx, which serves `/static/`. Nginx uses the pinned official
+1.30.6 Alpine image; `/healthz` checks the proxy, while backend health is checked
+separately. The interactive Swagger UI still loads its reviewed CDN assets.
+
+The proxy accepts request bodies up to **11 MiB**, leaving multipart overhead
+for the API's **10 MiB file** limit. The exact file limit is accepted; larger
+files within the proxy limit get an API 400, and oversized whole requests get
+Nginx 413. An unavailable backend yields Nginx 502 or 504, depending on whether
+the connection fails or times out. These proxy errors happen
+before API auditing. API JSON errors and authentication/no-store headers pass
+through; API responses are not cached or automatically retried by Nginx.
 
 MinIO is built from the official source tag
 `RELEASE.2025-09-07T16-13-09Z`.
@@ -184,8 +199,9 @@ docker compose exec -T backend python manage.py spectacular --validate --fail-on
 
 The schema is generated from the current implementation. Tests validate its
 request/response separation, binary multipart fields, query bounds, bearer
-security, and error statuses. Audit events are described below. Nginx, Celery, and WebSocket
-notifications remain tracked in [the task queue](docs/tasks.md).
+security, and error statuses. Audit events are described below. Nginx deployment
+is included; Celery and WebSocket notifications remain tracked in
+[the task queue](docs/tasks.md).
 
 Run the real-service integration checks separately:
 
@@ -202,7 +218,9 @@ and MinIO endpoint. The existing stack keeps running.
 Checks cover JWT roles, exact upload/download bytes, private bucket access,
 actual 60-second URL expiration, replacement/deletion cleanup, and recovery
 from Redis and MinIO outages, plus durable audit records for every tested
-operation. Allow several minutes, including the expiration
+operation. It also checks static file bytes/MIME types, public pagination links,
+forwarded-header spoof resistance, a real 10 MiB transfer, 400/413 boundaries,
+and backend outage/recreation recovery through Nginx. Allow several minutes, including the expiration
 wait. The command stops only its disposable services during outage checks,
 then removes its own containers and volumes and verifies that all pre-existing
 volumes remain. If cleanup fails, it reports the private temporary directory
@@ -214,6 +232,54 @@ access; the script does not change them.
 Feature branches start from `develop` and return through pull requests.
 Release branches prepare delivery to `main` and are merged back into
 `develop`. Released versions are tagged.
+
+## HTTPS deployment example
+
+The default stack binds HTTP only to loopback. The provided
+`compose.production.yaml.example` and `docker/nginx/production.conf.example`
+show TLS termination at this Nginx container. They are applied explicitly;
+the normal `make up` command does not publish the service to the internet.
+
+Before using the example:
+
+1. Replace `api.example.com` in the Nginx example with the actual public DNS
+   name and set `DJANGO_ALLOWED_HOSTS` accordingly in `.env`.
+2. Use deployment-specific Django/database/MinIO credentials. Set
+   `MINIO_PUBLIC_ENDPOINT_URL` to a separately reachable **HTTPS** object
+   endpoint; the API proxy does not expose private MinIO objects directly.
+3. Obtain certificates for that DNS name through the deployment's certificate
+   provider. Set absolute `TLS_CERTIFICATE_PATH` and `TLS_PRIVATE_KEY_PATH`
+   values in `.env`, pointing to existing PEM files outside the repository.
+   Make them readable by the Nginx container user (UID/GID 101); a private key
+   with mode `0640` and the appropriate group is sufficient. Mounts stay
+   read-only, and missing files are not created automatically.
+4. Review the example's **public ports 80 and 443**, then run:
+
+```bash
+docker compose -f compose.yaml -f compose.production.yaml.example config --quiet
+docker compose -f compose.yaml -f compose.production.yaml.example up -d --build --wait
+docker compose -f compose.yaml -f compose.production.yaml.example exec nginx nginx -t
+```
+
+The example disables debug, enables secure session/CSRF cookies and Django's
+HTTPS redirect, redirects public HTTP to the canonical HTTPS host, and retains
+an internal HTTP proxy health check. Nginx overwrites forwarded scheme/client
+headers. Compose explicitly enables `DJANGO_TRUST_PROXY`; native Django runs
+default to `False`. Only the private backend behind this controlled proxy
+should trust `X-Forwarded-Proto`. A different external TLS terminator needs its
+own explicit trust configuration, rather than forwarding client-supplied scheme
+headers. Certificate issuance and renewal remain deployment responsibilities.
+
+Static assets are public and images remain private in MinIO. The access-log
+format excludes query strings, request headers and response bodies; normal
+Nginx error logs still provide proxy diagnostics. Existing audit logs keep their
+separate restricted schema.
+
+Configuration references: [Nginx proxy headers](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header),
+[request body limit](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size),
+[upstream DNS resolution](https://nginx.org/en/docs/http/ngx_http_upstream_module.html#resolve),
+[Django static deployment](https://docs.djangoproject.com/en/5.2/howto/static-files/deployment/),
+and [trusted proxy scheme](https://docs.djangoproject.com/en/5.2/ref/settings/#secure-proxy-ssl-header).
 
 ## Searching and browsing documents
 

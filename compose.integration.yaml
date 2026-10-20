@@ -5,8 +5,12 @@ services:
       - ${INTEGRATION_ENV_FILE:?required}
     environment:
       MINIO_PUBLIC_ENDPOINT_URL: http://127.0.0.1:${INTEGRATION_MINIO_PORT:?required}
+    ports: !reset []
+
+  nginx:
+    image: ${INTEGRATION_NGINX_IMAGE:?required}
     ports: !override
-      - "127.0.0.1:${INTEGRATION_API_PORT:?required}:8000"
+      - "127.0.0.1:${INTEGRATION_API_PORT:?required}:8080"
 
   postgres:
     ports: !reset []

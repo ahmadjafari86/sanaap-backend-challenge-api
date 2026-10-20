@@ -37,6 +37,7 @@ ps:
 check:
 	docker compose exec backend python manage.py check
 	docker compose exec backend python manage.py makemigrations --check --dry-run
+	docker compose exec nginx nginx -t
 
 shell:
 	docker compose exec backend python manage.py shell
