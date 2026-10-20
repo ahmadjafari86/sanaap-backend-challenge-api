@@ -23,4 +23,3 @@ class DocumentRolePermission(BasePermission):
             return role == User.Role.ADMIN
 
         return False
-    

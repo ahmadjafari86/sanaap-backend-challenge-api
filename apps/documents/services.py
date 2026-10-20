@@ -19,7 +19,11 @@ def create_document(*, title, uploaded_file, creator):
     extension = uploaded_file.image.format.lower()
     proposed_key = f"documents/{uuid4().hex}.{extension}"
 
-    stored_key = default_storage.save(proposed_key, uploaded_file)
+    try:
+        stored_key = default_storage.save(proposed_key, uploaded_file)
+    except Exception:
+        _delete_document_object(proposed_key)
+        raise
 
     try:
         with transaction.atomic():

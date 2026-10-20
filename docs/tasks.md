@@ -9,6 +9,7 @@
 - T01–T09 continue on `feature/documents`, based on `develop` after the accounts PR was merged.
 - Keep task changes reviewable and commit them after shared review.
 - T09 prepares the documents pull request into `develop`.
+- T09 uses a verified checkpoint commit to open the draft PR; shared review is still required before merging or starting T10.
 - T10–T13 each use a feature branch from updated `develop` after prerequisites have been merged. Their pull requests also target `develop`.
 - T14 uses a release branch for the agreed version, merges into `main` and back into `develop`, and tags the release.
 - Do not merge or publish a release before its review checkpoint.
@@ -25,12 +26,26 @@
 | T06 | Title search, creator filtering, and pagination | Mandatory | Completed; reviewed by user |
 | T07 | Resilient document metadata caching | Mandatory | Completed; reviewed by user |
 | T08 | OpenAPI, Swagger, and user documentation | Mandatory | Completed; reviewed by user |
-| T09 | Mandatory integration checks and documents PR | Mandatory | Pending |
+| T09 | Mandatory integration checks and documents PR | Mandatory | Verification complete; awaiting shared review |
 | T10 | Audit logging | Optional, included in scope | Pending |
 | T11 | Nginx deployment with Gunicorn | Optional, included in scope | Pending |
 | T12 | Celery background document storage | Optional, included in scope | Pending |
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Pending |
 | T14 | Final regression checks and Git Flow release | Delivery | Pending |
+
+## Review Checkpoint — T09
+
+- Added `make integration`, a standard-library Python controller, and a Compose override for a disposable `sanaap-t09-*` project with fresh credentials, random loopback API/MinIO ports, and separate volumes. It rebuilds current images and runs regression tests in a fresh one-off backend container.
+- Added six isolation tests, written before the guard implementation. The controller rejects shared/external resources, bind mounts, unsafe port publication, and fixed container names, checks isolation again before cleanup, and verifies all pre-existing volumes survive.
+- The host-to-Docker connection reset was caused by Mullvad blocking LAN access. After explicit user permission, only Local network sharing was enabled; the VPN stayed connected. Host Swagger and MinIO health requests returned HTTP 200.
+- Real HTTP checks passed for JWT role enforcement, shared metadata, upload/download byte equality, unsigned-object denial, filtering/pagination, and successful replacement/deletion with object cleanup.
+- Verified actual signed-URL expiration returns HTTP 403 while the object still exists. Refresh-token logout rejects refresh reuse while the existing access token retains its documented validity.
+- Stopped and recovered only the disposable Redis and MinIO services. Reads and updates survived Redis failure without stale metadata. MinIO upload/replacement failures returned safe 503 responses and preserved database state. Post-commit deletion during MinIO outage retained the documented private orphan, which the integration controller subsequently removed.
+- Whole-branch independent review found two Important issues: truncated JPEG pixel data passed validation, and initial uploads omitted attempted-key cleanup after a lost acknowledgement. Four new regressions reproduced both issues before implementation. The fixes fully decode images before storage, rewind the upload stream, and attempt UUID-key cleanup while preserving the original storage error. Also removed one trailing-whitespace issue.
+- Final clean-stack verification: all **173 tests passed on PostgreSQL**; startup, applied/missing migrations, and warning-free OpenAPI validation passed. Real integration then completed successfully and removed only its own resources, preserving all pre-existing volumes.
+- Rebuilt the main backend with the final code and repeated all 173 PostgreSQL tests without skips, migration drift detection, and warning-free schema validation. Host Swagger and MinIO health endpoints both returned HTTP 200.
+- README now documents the integration command and prerequisites, full image decoding, attempted-key compensation, and remaining timeout/crash/cleanup limitations. The mandatory implementation checklist is updated; merging and optional work remain unchecked.
+- This checkpoint prepares the draft documents PR from `feature/documents` into `develop`. Hold for shared user review before merging or starting T10; optional audit, Nginx, Celery, and Channels remain pending.
 
 ## Completed Review — T08
 
@@ -46,6 +61,7 @@
 - Swagger uses the installed integration's CDN assets, so the browser needs internet access. The host-to-Docker connection reset remains a concrete T09 networking preflight issue; no VPN/firewall settings were changed and no cause is claimed yet.
 - Real Redis/MinIO/clean-start integration and the documents PR remain T09; audit/deployment/background features remain their existing tasks.
 - Verification was repeated successfully before committing T08: all 163 PostgreSQL tests passed.
+- Commit: `fbe6b02` — `docs(api): add validated OpenAPI Swagger and usage guide`.
 
 ## Completed Review — T07
 
@@ -269,6 +285,8 @@
 - Run the complete suite against PostgreSQL and verify real API upload and download against MinIO.
 - Verify startup, migrations, and private bucket initialization with an isolated clean Compose project, preserving existing volumes.
 - Check Redis failure behavior and storage failure handling.
+- Provide `make integration`: an automatically named disposable Compose project with fresh credentials, random loopback-only API/MinIO ports, new project-owned volumes, and guarded cleanup preserving all pre-existing volumes. Verify actual HTTP/JWT/API behavior, binary transfers, private unsigned-object denial, real 60-second expiry, replacement/deletion cleanup, Redis outage/recovery, and MinIO outage/recovery. Stop only services in that disposable project.
+- Verify integration isolation guards before running Docker mutations. Full regression also runs in a fresh one-off backend container; validate schema and migrations on the clean stack.
 - Review the completed mandatory checklist and create the documents PR into `develop`.
 - Complete the shared review and merge checkpoint before starting optional feature branches.
 

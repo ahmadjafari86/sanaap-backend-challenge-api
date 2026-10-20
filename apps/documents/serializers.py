@@ -1,3 +1,4 @@
+from PIL import Image
 from rest_framework import serializers
 
 from .models import Document
@@ -26,7 +27,14 @@ class DocumentUploadSerializer(serializers.Serializer):
                 "Only JPEG and PNG images are allowed.",
             )
 
-        uploaded_file.seek(0)
+        try:
+            uploaded_file.seek(0)
+            with Image.open(uploaded_file) as image:
+                image.load()
+        except (OSError, ValueError):
+            raise serializers.ValidationError("Upload a complete, valid image.") from None
+        finally:
+            uploaded_file.seek(0)
         return uploaded_file
 
 

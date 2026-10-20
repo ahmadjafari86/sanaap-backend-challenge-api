@@ -51,7 +51,7 @@
 - [x] Test database and storage failures during document replacement, including lost upload acknowledgements and cleanup failure.
 - [x] Preserve the previous file when replacement fails.
 - [x] Verify the document foundation (27 project tests passed).
-- [ ] Verify tests and commit.
+- [x] Verify tests and commit (T01–T04 reviewed by user).
 
 ## 4. Querying, Caching, and API Documentation
 - [x] Add title search, creator filtering, and pagination (T06 reviewed by user).
@@ -61,14 +61,17 @@
 - [x] Test database fallback for cache read/write/invalidation errors (T07 reviewed by user; deployed Redis outage check remains T09).
 - [x] Never cache presigned URLs in the storage backend or HTTP responses (T05 reviewed by user).
 - [x] Check authentication, role/object permissions, and document existence/version before metadata cache access (T07 reviewed by user).
-- [x] Add public OpenAPI schema and Swagger UI with validated request/response contracts (T08 reviewed by user; host-to-Docker reachability remains T09).
-- [ ] Verify tests and commit.
+- [x] Add public OpenAPI schema and Swagger UI with validated request/response contracts (T08 reviewed by user; host-to-Docker reachability verified in T09).
+- [x] Verify tests and commit (T06–T08 reviewed by user).
 
 ## 5. Mandatory Delivery
-- [ ] Run: docker compose run --rm backend python manage.py test
-- [ ] Check for missing migrations.
-- [ ] Verify startup and migrations using a fresh Compose project.
-- [ ] Verify a real upload and download through MinIO.
+- [x] Run the full PostgreSQL suite in a fresh one-off backend container through `make integration`.
+- [x] Check for missing migrations and validate OpenAPI without warnings.
+- [x] Verify startup, migrations, and private bucket initialization using a fresh Compose project.
+- [x] Verify a real upload and download through MinIO, matching exact file bytes.
+- [x] Verify unsigned-object denial, actual 60-second URL expiry, and replacement/deletion cleanup.
+- [x] Verify real Redis and MinIO outage/recovery behavior in the disposable stack.
+- [x] Add isolation guards and verify cleanup preserves all pre-existing volumes.
 - [x] Document setup, application-admin creation, auth/roles, endpoints, examples, file limits, assumptions, and limitations (T08 reviewed by user).
 - [x] Document presigned URL behavior after logout or role changes (T05 reviewed by user).
 - [ ] Merge through develop and prepare the main branch for delivery.

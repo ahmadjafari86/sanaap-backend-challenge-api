@@ -134,8 +134,9 @@ storage keys and version identifiers are omitted. Times are UTC ISO 8601 values.
 ## Uploading and updating images
 
 Images must contain real JPEG or PNG data and be at most **10 MiB (10,485,760
-bytes)**. The exact limit is accepted. Filenames and declared MIME types do not
-bypass image-content validation. Titles are trimmed, nonblank, and at most 255
+bytes)**. The exact limit is accepted. Images must fully decode; truncated pixel
+data is rejected. Filenames and declared MIME types do not bypass image-content
+validation. Titles are trimmed, nonblank, and at most 255
 characters. The server assigns creator, timestamps, unique storage key, and file
 metadata; client-supplied values cannot override them.
 
@@ -185,6 +186,27 @@ The schema is generated from the current implementation. Tests validate its
 request/response separation, binary multipart fields, query bounds, bearer
 security, and error statuses. Optional audit logs, Nginx, Celery, and WebSocket
 notifications remain tracked in [the task queue](docs/tasks.md).
+
+Run the real-service integration checks separately:
+
+```bash
+make integration
+```
+
+This command also requires host Python 3 and Docker Compose supporting the
+`!override` and `!reset` merge tags. It builds the current images, creates a
+disposable `sanaap-t09-*` project with fresh credentials, migrations, and volumes,
+and runs the full regression suite. Random loopback ports expose only its API
+and MinIO endpoint. The existing stack keeps running.
+
+Checks cover JWT roles, exact upload/download bytes, private bucket access,
+actual 60-second URL expiration, replacement/deletion cleanup, and recovery
+from Redis and MinIO outages. Allow several minutes, including the expiration
+wait. The command stops only its disposable services during outage checks,
+then removes its own containers and volumes and verifies that all pre-existing
+volumes remain. If cleanup fails, it reports the private temporary directory
+containing recovery configuration. Host VPN settings must permit local Docker
+access; the script does not change them.
 
 ## Development workflow
 
@@ -282,9 +304,9 @@ storage key. The previous object is deleted only after the database transaction
 commits. Metadata-only updates retain the image and original creator.
 
 Initial creation uploads the object before inserting its metadata. Database
-failure attempts to delete the acknowledged upload. If the storage write raises
-after actually writing an object but before returning its key, initial creation
-can leave an orphan; there is no acknowledged key to compensate.
+failure attempts to delete the acknowledged upload. A storage write that raises
+before returning its key triggers best-effort cleanup of the attempted UUID key,
+while preserving the original storage error.
 
 Document deletion also locks and rereads the current row, removes its metadata
 inside the transaction, and deletes its current storage object after commit.
@@ -298,7 +320,7 @@ delete an old object after commit does not undo a successful update.
 
 There is no automatic orphan-object reconciler. A process crash between upload
 and database commit, a failed cleanup, or a crash before an after-commit callback
-runs can leave unreferenced objects that require reconciliation. Replacement
+runs can leave unreferenced objects that require reconciliation. Creation and replacement
 upload errors trigger best-effort deletion of the attempted UUID key. An upload
 that finishes after a timeout, or a backend that changes an unacknowledged key,
 can still leave an orphan despite that attempt. If a caller wraps the service

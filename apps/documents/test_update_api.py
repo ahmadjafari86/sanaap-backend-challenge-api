@@ -240,6 +240,23 @@ class DocumentUpdateAPITests(APITestCase):
                 self.assert_original_is_intact()
                 self.assertEqual(self.storage.listdir("documents")[1], ["original.png"])
 
+    def test_truncated_jpeg_replacement_preserves_original(self):
+        self.client.force_authenticate(user=self.editor)
+        buffer = BytesIO()
+        Image.new("RGB", (100, 100), color="red").save(buffer, format="JPEG")
+        uploaded_file = SimpleUploadedFile(
+            "truncated.jpeg", buffer.getvalue()[:-200], content_type="image/jpeg",
+        )
+
+        response = self.client.patch(
+            self.url, {"title": "Corrupt replacement", "file": uploaded_file}, format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("file", response.data)
+        self.assert_original_is_intact()
+        self.assertEqual(self.storage.listdir("documents")[1], ["original.png"])
+
     def test_replacement_size_boundary(self):
         self.client.force_authenticate(user=self.editor)
         content = image_bytes(color="red")

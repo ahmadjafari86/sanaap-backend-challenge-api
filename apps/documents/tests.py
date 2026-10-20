@@ -3,6 +3,7 @@ from unittest.mock import ANY, patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
+from django.core.files.storage import InMemoryStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from django.test import SimpleTestCase, TestCase
@@ -295,7 +296,46 @@ class DocumentCreationTests(TestCase):
             )
 
         self.assertFalse(Document.objects.exists())
-        storage.delete.assert_not_called()
+        storage.delete.assert_called_once_with(storage.save.call_args.args[0])
+
+    def test_lost_upload_acknowledgement_removes_persisted_object(self):
+        storage = InMemoryStorage()
+        save = storage.save
+
+        def save_then_fail(name, content):
+            save(name, content)
+            raise OSError("Upload acknowledgement was lost")
+
+        with (
+            patch("apps.documents.services.default_storage", storage),
+            patch.object(storage, "save", side_effect=save_then_fail),
+            self.assertRaisesMessage(OSError, "Upload acknowledgement was lost"),
+        ):
+            create_document(
+                title="Lost acknowledgement",
+                uploaded_file=self.validated_file,
+                creator=self.creator,
+            )
+
+        self.assertFalse(Document.objects.exists())
+        self.assertEqual(storage.listdir("documents")[1], [])
+
+    @patch("apps.documents.services.default_storage")
+    def test_upload_cleanup_failure_preserves_original_storage_error(self, storage):
+        storage.save.side_effect = OSError("Upload acknowledgement was lost")
+        storage.delete.side_effect = OSError("private-cleanup-details")
+
+        with self.assertLogs("apps.documents.services", level="ERROR") as logs:
+            with self.assertRaisesMessage(OSError, "Upload acknowledgement was lost"):
+                create_document(
+                    title="Failed cleanup",
+                    uploaded_file=self.validated_file,
+                    creator=self.creator,
+                )
+
+        self.assertFalse(Document.objects.exists())
+        storage.delete.assert_called_once_with(storage.save.call_args.args[0])
+        self.assertNotIn("private-cleanup-details", "\n".join(logs.output))
 
     @patch("apps.documents.services.default_storage")
     def test_cleanup_failure_preserves_database_error(self, storage):

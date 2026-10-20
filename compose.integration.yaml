@@ -1,0 +1,20 @@
+services:
+  backend:
+    image: ${INTEGRATION_BACKEND_IMAGE:?required}
+    env_file: !override
+      - ${INTEGRATION_ENV_FILE:?required}
+    environment:
+      MINIO_PUBLIC_ENDPOINT_URL: http://127.0.0.1:${INTEGRATION_MINIO_PORT:?required}
+    ports: !override
+      - "127.0.0.1:${INTEGRATION_API_PORT:?required}:8000"
+
+  postgres:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  minio:
+    image: ${INTEGRATION_MINIO_IMAGE:?required}
+    ports: !override
+      - "127.0.0.1:${INTEGRATION_MINIO_PORT:?required}:9000"

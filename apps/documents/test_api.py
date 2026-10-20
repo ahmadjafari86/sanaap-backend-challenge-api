@@ -184,6 +184,25 @@ class DocumentUploadAPITests(APITestCase):
         storage.save.assert_not_called()
 
     @patch("apps.documents.services.default_storage")
+    def test_truncated_jpeg_is_rejected_before_storage(self, storage):
+        self.authenticate_editor()
+        storage.save.side_effect = lambda name, content: name
+        buffer = BytesIO()
+        Image.new("RGB", (100, 100), color="blue").save(buffer, format="JPEG")
+        uploaded_file = SimpleUploadedFile(
+            "truncated.jpeg", buffer.getvalue()[:-200], content_type="image/jpeg",
+        )
+
+        response = self.client.post(
+            self.url, {"title": "Corrupt image", "file": uploaded_file}, format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("file", response.data)
+        self.assertFalse(Document.objects.exists())
+        storage.save.assert_not_called()
+
+    @patch("apps.documents.services.default_storage")
     def test_upload_size_boundary(self, storage):
         self.authenticate_editor()
         storage.save.side_effect = lambda name, content: name
@@ -305,7 +324,8 @@ class DocumentUploadAPITests(APITestCase):
                 self.assertNotIn(private_message, "\n".join(logs.output))
 
         self.assertFalse(Document.objects.exists())
-        storage.delete.assert_not_called()
+        attempted_keys = [call.args[0] for call in storage.save.call_args_list]
+        self.assertEqual([call.args[0] for call in storage.delete.call_args_list], attempted_keys)
 
     @patch("apps.documents.services.default_storage")
     def test_database_failure_cleans_up_and_returns_service_unavailable(self, storage):

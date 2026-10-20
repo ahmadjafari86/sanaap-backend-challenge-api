@@ -1,0 +1,56 @@
+from copy import deepcopy
+
+from django.test import SimpleTestCase
+
+from scripts.integration_check import is_isolated_config
+
+
+class IntegrationIsolationTests(SimpleTestCase):
+    def setUp(self):
+        self.project = "sanaap-t09-a123456789"
+        self.config = {
+            "name": self.project,
+            "volumes": {
+                "postgres_data": {"name": f"{self.project}_postgres_data"},
+                "minio_data": {"name": f"{self.project}_minio_data"},
+            },
+            "networks": {"default": {"name": f"{self.project}_default"}},
+            "services": {
+                "backend": {"ports": [{"host_ip": "127.0.0.1", "target": 8000, "published": "28000"}]},
+                "postgres": {"volumes": [{"type": "volume", "source": "postgres_data", "target": "/var/lib/postgresql/data"}]},
+                "redis": {},
+                "minio": {"volumes": [{"type": "volume", "source": "minio_data", "target": "/data"}]},
+            },
+        }
+
+    def test_allows_a_fresh_loopback_only_project_with_its_own_volumes(self):
+        self.assertTrue(is_isolated_config(self.config, self.project))
+
+    def test_rejects_the_current_project_as_a_cleanup_target(self):
+        self.config["name"] = "sanaap-backend-challenge-api"
+        self.assertFalse(is_isolated_config(self.config, "sanaap-backend-challenge-api"))
+
+    def test_rejects_reusing_an_existing_database_volume(self):
+        self.config["volumes"]["postgres_data"]["name"] = "sanaap-backend-challenge-api_postgres_data"
+        self.assertFalse(is_isolated_config(self.config, self.project))
+
+    def test_rejects_external_resources_and_host_directory_mounts(self):
+        external = deepcopy(self.config)
+        external["volumes"]["minio_data"]["external"] = True
+        self.assertFalse(is_isolated_config(external, self.project))
+        bind = deepcopy(self.config)
+        bind["services"]["postgres"]["volumes"] = [{"type": "bind", "source": "/existing-data", "target": "/data"}]
+        self.assertFalse(is_isolated_config(bind, self.project))
+
+    def test_rejects_publishing_test_services_to_other_interfaces(self):
+        for host in ("0.0.0.0", "::", None):
+            with self.subTest(host=host):
+                self.config["services"]["backend"]["ports"][0]["host_ip"] = host
+                self.assertFalse(is_isolated_config(self.config, self.project))
+
+    def test_rejects_a_shared_network_or_fixed_container_name(self):
+        network = deepcopy(self.config)
+        network["networks"]["default"]["name"] = "existing_default"
+        self.assertFalse(is_isolated_config(network, self.project))
+        self.config["services"]["backend"]["container_name"] = "existing-backend"
+        self.assertFalse(is_isolated_config(self.config, self.project))
