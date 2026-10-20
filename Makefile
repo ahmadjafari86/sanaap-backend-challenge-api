@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help env up down logs ps check shell test
+.PHONY: help env up down logs ps check shell test integration
 
 
 help:
@@ -10,6 +10,8 @@ help:
 	@echo "make ps     - Show service status"
 	@echo "make check  - Run Django checks"
 	@echo "make shell  - Open Django shell"
+	@echo "make test   - Run the regression suite"
+	@echo "make integration - Verify a disposable real-service stack"
 
 env:
 	@test -f .env || docker run --rm \
@@ -41,3 +43,6 @@ shell:
 
 test:
 	docker compose exec backend python manage.py test --noinput
+
+integration: env
+	python3 scripts/integration_check.py

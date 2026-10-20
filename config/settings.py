@@ -95,6 +95,21 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Sanaap Document Management API",
+    "DESCRIPTION": (
+        "Shared JPEG/PNG document management with application roles and JWT authentication. "
+        "Use token/ to obtain credentials and Swagger Authorize with the access token. "
+        "Document ownership records attribution; all three roles can read every document."
+    ),
+    "VERSION": "v1",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SERVE_AUTHENTICATION": [],
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.AllowAny"],
+    "COMPONENT_SPLIT_REQUEST": True,
+    "SWAGGER_UI_SETTINGS": {"deepLinking": True, "persistAuthorization": False, "docExpansion": "none"},
+}
+
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
@@ -110,6 +125,8 @@ SIMPLE_JWT = {
 DATABASES = {
     "default": env.db("DATABASE_URL"),
 }
+
+DOCUMENT_METADATA_CACHE_TTL_SECONDS = 60
 
 CACHES = {
     "default": {
@@ -129,6 +146,9 @@ minio_endpoint = urlsplit(env("MINIO_ENDPOINT_URL"))
 minio_public_endpoint = urlsplit(env("MINIO_PUBLIC_ENDPOINT_URL"))
 minio_bucket = env("MINIO_BUCKET_NAME")
 
+DOCUMENT_DOWNLOAD_URL_TTL_SECONDS = 60
+MINIO_URL_CACHING_ENABLED = False
+
 STORAGES = {
     "default": {
         "BACKEND": "django_minio_backend.models.MinioBackend",
@@ -145,7 +165,9 @@ STORAGES = {
             "MINIO_DEFAULT_BUCKET": minio_bucket,
             "MINIO_PRIVATE_BUCKETS": [minio_bucket],
             "MINIO_PUBLIC_BUCKETS": [],
-            "MINIO_URL_EXPIRY_HOURS": timedelta(minutes=5),
+            "MINIO_URL_EXPIRY_HOURS": timedelta(
+                seconds=DOCUMENT_DOWNLOAD_URL_TTL_SECONDS,
+            ),
             "MINIO_CONSISTENCY_CHECK_ON_START": False,
             "MINIO_BUCKET_CHECK_ON_SAVE": False,
         },
