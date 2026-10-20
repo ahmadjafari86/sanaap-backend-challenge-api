@@ -21,6 +21,7 @@ from .exceptions import (
 from .models import Document
 from .pagination import DocumentPagination
 from .permissions import DocumentRolePermission
+from .schema import detail_schema, download_schema, list_schema
 from .serializers import (
     DocumentDownloadSerializer,
     DocumentListFilterSerializer,
@@ -38,6 +39,7 @@ from .services import (
 logger = logging.getLogger(__name__)
 
 
+@list_schema
 class DocumentListCreateView(generics.ListCreateAPIView):
     queryset = Document.objects.order_by("-created_at", "-id")
     serializer_class = DocumentSerializer
@@ -83,6 +85,7 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         )
 
 
+@detail_schema
 class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
@@ -146,6 +149,7 @@ class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 @method_decorator(never_cache, name="dispatch")
+@download_schema
 class DocumentDownloadView(generics.GenericAPIView):
     queryset = Document.objects.all()
     serializer_class = DocumentDownloadSerializer

@@ -24,13 +24,28 @@
 | T05 | Private download URLs valid for 60 seconds | Mandatory | Completed; reviewed by user |
 | T06 | Title search, creator filtering, and pagination | Mandatory | Completed; reviewed by user |
 | T07 | Resilient document metadata caching | Mandatory | Completed; reviewed by user |
-| T08 | OpenAPI, Swagger, and user documentation | Mandatory | Pending |
+| T08 | OpenAPI, Swagger, and user documentation | Mandatory | Completed; reviewed by user |
 | T09 | Mandatory integration checks and documents PR | Mandatory | Pending |
 | T10 | Audit logging | Optional, included in scope | Pending |
 | T11 | Nginx deployment with Gunicorn | Optional, included in scope | Pending |
 | T12 | Celery background document storage | Optional, included in scope | Pending |
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Pending |
 | T14 | Final regression checks and Git Flow release | Delivery | Pending |
+
+## Completed Review — T08
+
+- The user approved the shared review of T08 and authorized proceeding to T09 after its commit.
+- Added public `/api/schema/` and `/api/docs/` routes that remain accessible with invalid Authorization headers. Business endpoints retain JWT and application-role permissions.
+- Documented all existing auth, user, and document operations, including binary multipart uploads/replacements, JSON/form title updates, password-free output, server-owned metadata, filters/pagination bounds, error statuses, 60-second downloads, and empty logout/deletion responses.
+- Enabled split request/response components and added documentation-only JWT subclasses preserving library behavior. Schema generation does not query user/document data.
+- Added 14 schema/Swagger contract tests. All failed with 404 before implementation, then passed locally with database access forbidden.
+- Expanded README with initial application-admin bootstrap, Swagger/login/refresh/logout, endpoint/role tables, examples, JPEG/PNG and 10 MiB limits, verification commands, and current storage/cache/URL boundaries.
+- Verification: `docker compose exec -T backend python manage.py test --noinput` — all 163 tests passed on PostgreSQL, with no skipped tests. Schema generation with `--validate --fail-on-warn` passed, migration dry-run reported no changes, and `git diff --check` passed.
+- Independent read-only code review found no Critical, Important, or Minor issues and independently passed all 14 schema tests and warning-free CLI validation.
+- Live Docker requests to the docs/schema routes returned HTTP 200 internally. The host's published `127.0.0.1:8000` connection resets, including without proxy use. The same-code temporary native preview on port 18000 successfully rendered Swagger in the browser, including CDN assets, Authorize, and auth/document/user groups; its tab and server were then closed.
+- Swagger uses the installed integration's CDN assets, so the browser needs internet access. The host-to-Docker connection reset remains a concrete T09 networking preflight issue; no VPN/firewall settings were changed and no cause is claimed yet.
+- Real Redis/MinIO/clean-start integration and the documents PR remain T09; audit/deployment/background features remain their existing tasks.
+- Verification was repeated successfully before committing T08: all 163 PostgreSQL tests passed.
 
 ## Completed Review — T07
 
@@ -46,6 +61,7 @@
 - README explains the cache/version contract, database dependency, outage fallback, old-key expiry, and version maintenance for direct database edits outside the service.
 - Real deployed Redis outage/MinIO/clean-start integration remains T09; full schema/docs remain T08 and audit remains T10.
 - Verification was repeated successfully before committing T07: all 149 PostgreSQL tests passed.
+- Commit: `d50da41` — `feat(documents): add resilient versioned metadata cache`.
 
 ## Completed Review — T06
 
@@ -241,9 +257,15 @@
 - Document setup, first application-admin creation, endpoints, role behavior, and file limits.
 - Explain independent database/storage failure windows, failed cleanup, and presigned URL behavior in README.
 - Validate the generated schema and check for missing migrations.
+- Publish anonymous schema and Swagger routes at `/api/schema/` and `/api/docs/`; stale/invalid Authorization headers must not prevent viewing documentation. Keep the business API's JWT/role rules unchanged.
+- Describe all existing authentication, user-management, and document operations. Split request/response components so passwords are absent from responses and image uploads use binary multipart fields.
+- Document metadata-only JSON/form updates, multipart replacements, query bounds, paginated lists, exact 60-second download responses, empty logout/deletion responses, and known error statuses. Use the installed drf-spectacular integration and validate without schema-generation warnings.
+- Expand README with first application-admin setup, token/Swagger usage, endpoint/role tables, file limits, examples, and current failure/consistency boundaries. Keep optional features in their assigned tasks.
+- Test the published schema/Swagger boundaries and generated client-facing contracts before implementation, then run the full PostgreSQL suite, schema validation, and migration check. Stop for shared review before committing T08 or starting T09.
 
 ### Task 9: T09 — Mandatory integration and documents PR
 
+- Resolve the observed host-to-Docker `127.0.0.1:8000` connection reset before claiming external reachability. Internal docs/schema HTTP 200 and a successful native browser preview isolate this as an integration/networking preflight; inspect the cause without changing VPN/firewall settings without authorization.
 - Run the complete suite against PostgreSQL and verify real API upload and download against MinIO.
 - Verify startup, migrations, and private bucket initialization with an isolated clean Compose project, preserving existing volumes.
 - Check Redis failure behavior and storage failure handling.

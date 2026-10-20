@@ -61,7 +61,7 @@
 - [x] Test database fallback for cache read/write/invalidation errors (T07 reviewed by user; deployed Redis outage check remains T09).
 - [x] Never cache presigned URLs in the storage backend or HTTP responses (T05 reviewed by user).
 - [x] Check authentication, role/object permissions, and document existence/version before metadata cache access (T07 reviewed by user).
-- [ ] Add OpenAPI schema and Swagger UI.
+- [x] Add public OpenAPI schema and Swagger UI with validated request/response contracts (T08 reviewed by user; host-to-Docker reachability remains T09).
 - [ ] Verify tests and commit.
 
 ## 5. Mandatory Delivery
@@ -69,7 +69,7 @@
 - [ ] Check for missing migrations.
 - [ ] Verify startup and migrations using a fresh Compose project.
 - [ ] Verify a real upload and download through MinIO.
-- [ ] Document setup, admin creation, endpoints, assumptions, and limitations.
+- [x] Document setup, application-admin creation, auth/roles, endpoints, examples, file limits, assumptions, and limitations (T08 reviewed by user).
 - [x] Document presigned URL behavior after logout or role changes (T05 reviewed by user).
 - [ ] Merge through develop and prepare the main branch for delivery.
 

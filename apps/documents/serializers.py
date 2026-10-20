@@ -13,7 +13,7 @@ class DocumentListFilterSerializer(serializers.Serializer):
 
 class DocumentUploadSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255)
-    file = serializers.ImageField()
+    file = serializers.ImageField(help_text="Real JPEG or PNG image, at most 10 MiB (10,485,760 bytes).")
 
     def validate_file(self, uploaded_file):
         if uploaded_file.size > MAX_IMAGE_SIZE:
@@ -31,7 +31,10 @@ class DocumentUploadSerializer(serializers.Serializer):
 
 
 class DocumentUpdateSerializer(DocumentUploadSerializer):
-    file = serializers.ImageField(required=False)
+    file = serializers.ImageField(
+        required=False,
+        help_text="Optional replacement JPEG or PNG image, at most 10 MiB (10,485,760 bytes).",
+    )
 
     def validate(self, attrs):
         if not attrs:
@@ -40,8 +43,8 @@ class DocumentUpdateSerializer(DocumentUploadSerializer):
 
 
 class DocumentDownloadSerializer(serializers.Serializer):
-    download_url = serializers.URLField(read_only=True)
-    expires_in = serializers.IntegerField(read_only=True)
+    download_url = serializers.URLField(read_only=True, help_text="Private temporary bearer URL; do not cache.")
+    expires_in = serializers.IntegerField(read_only=True, min_value=60, max_value=60)
 
 
 class DocumentSerializer(serializers.ModelSerializer):

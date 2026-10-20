@@ -95,6 +95,21 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Sanaap Document Management API",
+    "DESCRIPTION": (
+        "Shared JPEG/PNG document management with application roles and JWT authentication. "
+        "Use token/ to obtain credentials and Swagger Authorize with the access token. "
+        "Document ownership records attribution; all three roles can read every document."
+    ),
+    "VERSION": "v1",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SERVE_AUTHENTICATION": [],
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.AllowAny"],
+    "COMPONENT_SPLIT_REQUEST": True,
+    "SWAGGER_UI_SETTINGS": {"deepLinking": True, "persistAuthorization": False, "docExpansion": "none"},
+}
+
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),

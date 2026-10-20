@@ -1,3 +1,8 @@
+# Sanaap Document Management API
+
+A Django REST Framework API for shared JPEG/PNG documents, using PostgreSQL,
+private MinIO storage, Redis metadata caching, and JWT application roles.
+
 ## Local setup
 
 Requirements:
@@ -17,6 +22,9 @@ and initializes the MinIO buckets.
 
 Services:
 - Backend: http://127.0.0.1:8000
+- Swagger UI: http://127.0.0.1:8000/api/docs/
+- OpenAPI schema: http://127.0.0.1:8000/api/schema/
+- MinIO object endpoint: http://127.0.0.1:19000
 - MinIO console: http://127.0.0.1:19001
 
 MinIO console credentials are configured in `.env` through
@@ -39,6 +47,144 @@ MinIO is built from the official source tag
 
 VPN software that blocks local networks may prevent access to Docker
 services. Check local-network access settings if connections fail.
+
+The example configuration is for local development. Production requires HTTPS,
+`DJANGO_DEBUG=False`, suitable allowed hosts, and deployment-specific credentials.
+`MINIO_PUBLIC_ENDPOINT_URL` must be reachable by the browser or download client.
+
+## First application admin
+
+Create the initial Django administrator interactively:
+
+```bash
+docker compose exec backend python manage.py createsuperuser --username admin
+```
+
+Set its application role using `make shell`, then run:
+
+```python
+from apps.accounts.models import User
+
+application_admin = User.objects.get(username="admin")
+application_admin.role = User.Role.ADMIN
+application_admin.save(update_fields=["role"])
+```
+
+Application API administration requires `role="admin"`. Django's staff/superuser
+flags control the Django administration site, and newly created users default to
+the viewer application role. After this bootstrap, an application admin can
+create users and assign roles through the API. Public registration is unavailable.
+
+## Authentication and Swagger
+
+Open `/api/docs/` and expand **Authentication → Obtain an access and refresh
+token**. Use **Try it out** with the admin's username and password. The response
+contains `access` and `refresh`. Click **Authorize** and enter the access token;
+Swagger adds the `Bearer` prefix. It does not persist authorization across reloads.
+
+For other clients, login accepts JSON at `POST /api/v1/auth/token/`:
+
+```json
+{"username": "admin", "password": "<your-password>"}
+```
+
+Send the access token as `Authorization: Bearer <access-token>`. Access tokens
+last 5 minutes; refresh tokens last 1 day. Submit `{"refresh": "<refresh-token>"}`
+to `POST /api/v1/auth/token/refresh/` to obtain a new access token. Refresh tokens
+are not rotated. The same payload sent to `POST /api/v1/auth/logout/` blacklists
+that refresh token and returns HTTP 200 with `{}`. Existing access tokens remain
+valid until expiry; invalid/expired/blacklisted refresh tokens return 401.
+
+The schema and Swagger page are public, including when an invalid Authorization
+header is present. Schema generation does not read live document/user data.
+Swagger's default JavaScript/CSS assets load from a CDN and require browser
+internet access. The API and schema are served locally; use
+`/api/schema/?format=json` for a JSON schema download.
+
+## Endpoints and roles
+
+All paths below start with `/api/v1/`. Document ownership records attribution;
+all three roles share access to all documents.
+
+| Method | Path | Allowed roles | Success |
+| --- | --- | --- | --- |
+| POST | `auth/token/` | Public; valid username/password | 200, access + refresh |
+| POST | `auth/token/refresh/` | Public; valid refresh token | 200, access |
+| POST | `auth/logout/` | Public; valid refresh token | 200, `{}` |
+| GET | `users/` | admin | 200, user array |
+| POST | `users/` | admin | 201, user metadata |
+| PATCH | `users/<id>/` | admin | 200, user metadata |
+| GET | `documents/` | admin, editor, viewer | 200, paginated metadata |
+| POST | `documents/` | admin, editor | 201, document metadata |
+| GET | `documents/<id>/` | admin, editor, viewer | 200, document metadata |
+| PUT/PATCH | `documents/<id>/` | admin, editor | 200, document metadata |
+| DELETE | `documents/<id>/` | admin | 204, no body |
+| GET | `documents/<id>/download/` | admin, editor, viewer | 200, download URL + expiry |
+
+User creation accepts `username`, `password`, optional `email`, and optional
+`role` (`admin`, `editor`, or `viewer`). PATCH can change those details or the
+role; password is optional and is never returned. Django password validation
+and hashing apply. User detail supports PATCH/OPTIONS; it has no GET route.
+
+Document list/detail also support HEAD and OPTIONS. The download endpoint supports
+GET/OPTIONS only. Metadata responses contain `id`, `title`, `original_filename`,
+`content_type`, `file_size`, `creator`, `created_at`, and `updated_at`; internal
+storage keys and version identifiers are omitted. Times are UTC ISO 8601 values.
+
+## Uploading and updating images
+
+Images must contain real JPEG or PNG data and be at most **10 MiB (10,485,760
+bytes)**. The exact limit is accepted. Filenames and declared MIME types do not
+bypass image-content validation. Titles are trimmed, nonblank, and at most 255
+characters. The server assigns creator, timestamps, unique storage key, and file
+metadata; client-supplied values cannot override them.
+
+Set `API_ACCESS_TOKEN` to an access token from login, then upload an existing file:
+
+```bash
+curl --request POST 'http://127.0.0.1:8000/api/v1/documents/' \
+  --header "Authorization: Bearer $API_ACCESS_TOKEN" \
+  --form 'title=Sample image' \
+  --form 'file=@/absolute/path/photo.png'
+```
+
+PATCH accepts a title and/or file; an empty update returns 400. PUT requires a
+title and optionally replaces the image. Send JSON or URL-encoded form data for
+title-only changes, and multipart form data for an image replacement. Original
+creator and creation time remain unchanged.
+
+```bash
+curl --request PATCH 'http://127.0.0.1:8000/api/v1/documents/1/' \
+  --header "Authorization: Bearer $API_ACCESS_TOKEN" \
+  --header 'Content-Type: application/json' \
+  --data '{"title": "Updated title"}'
+```
+
+## Errors and verification
+
+Invalid input returns 400, usually with field names mapped to message lists;
+parsing errors use a `detail` string. Missing/invalid/expired credentials and
+inactive JWT users return 401. A disallowed or unknown application role returns
+403. Missing documents/users and out-of-range valid pages return 404.
+
+Known creation/update/deletion service errors and download signing/lookup errors
+return a generic 503. Storage cleanup after an already committed update or
+deletion is best effort and does not change its success status. Initial database
+outages on list/detail/user queries can still produce a standard server error;
+Redis fallback does not make PostgreSQL optional.
+
+Run the regression, migration, and OpenAPI checks:
+
+```bash
+make test
+make check
+docker compose exec -T backend python manage.py spectacular --validate --fail-on-warn --file /tmp/openapi.yaml
+```
+
+The schema is generated from the current implementation. Tests validate its
+request/response separation, binary multipart fields, query bounds, bearer
+security, and error statuses. Optional audit logs, Nginx, Celery, and WebSocket
+notifications remain tracked in [the task queue](docs/tasks.md).
 
 ## Development workflow
 
@@ -134,6 +280,11 @@ uploads a new UUID-based object before updating document metadata. The update
 locks and rereads the document row so concurrent replacements use its current
 storage key. The previous object is deleted only after the database transaction
 commits. Metadata-only updates retain the image and original creator.
+
+Initial creation uploads the object before inserting its metadata. Database
+failure attempts to delete the acknowledged upload. If the storage write raises
+after actually writing an object but before returning its key, initial creation
+can leave an orphan; there is no acknowledged key to compensate.
 
 Document deletion also locks and rereads the current row, removes its metadata
 inside the transaction, and deletes its current storage object after commit.
