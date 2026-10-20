@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help env up down logs ps check shell
+.PHONY: help env up down logs ps check shell test
+
 
 help:
 	@echo "make up     - Build and start the project"
@@ -37,3 +38,6 @@ check:
 
 shell:
 	docker compose exec backend python manage.py shell
+
+test:
+	docker compose exec backend python manage.py test --noinput
