@@ -22,7 +22,7 @@
 | T03 | Metadata updates and safe image replacement | Mandatory | Completed; reviewed by user |
 | T04 | Document deletion after successful database commit | Mandatory | Completed; reviewed by user |
 | T05 | Private download URLs valid for 60 seconds | Mandatory | Completed; reviewed by user |
-| T06 | Title search, creator filtering, and pagination | Mandatory | Pending |
+| T06 | Title search, creator filtering, and pagination | Mandatory | Completed; reviewed by user |
 | T07 | Resilient document metadata caching | Mandatory | Pending |
 | T08 | OpenAPI, Swagger, and user documentation | Mandatory | Pending |
 | T09 | Mandatory integration checks and documents PR | Mandatory | Pending |
@@ -31,6 +31,22 @@
 | T12 | Celery background document storage | Optional, included in scope | Pending |
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Pending |
 | T14 | Final regression checks and Git Flow release | Delivery | Pending |
+
+## Completed Review — T06
+
+- The user approved the shared review of T06 and authorized proceeding to T07 after its commit.
+- Added title substring search and exact creator-id filtering to the shared list; filters combine with AND and run before pagination.
+- Added page-number pagination with a default of 10 and a maximum of 100 items. The list now returns `count`, `next`, `previous`, and `results`; earlier read tests were updated to consume `results`.
+- Preserved descending creation time/id ordering. Navigation links retain search, creator, and page size; an empty first page has zero count and no navigation links.
+- Invalid search/creator/page/page-size inputs return field-specific 400 responses; a valid page beyond the result set returns 404. Explicit blank creator values are rejected rather than silently ignored.
+- All roles can filter another user's documents. Authentication and role checks precede query validation; filtering leaves the other document endpoints unchanged.
+- Added 20 real-database API tests, including combined filters, case-insensitive/literal/Persian search, title-only matching, invalid input, page-size bounds, stable tie ordering, and next/previous navigation.
+- Test-first evidence: the new tests failed for the missing pagination/filter behavior before implementation. All 32 query/read tests then passed locally.
+- Verification: `docker compose exec -T backend python manage.py test --noinput` — all 127 tests passed on PostgreSQL, with no skipped tests. Migration dry-run reported no changes; `git diff --check` passed.
+- Independent read-only code review found no Critical, Important, or Minor issues and independently passed all 32 query/read tests.
+- README documents query parameters, errors, the changed list envelope, navigation, and the possibility of page shifts when data changes between requests.
+- Metadata caching remains T07, full OpenAPI/Swagger remains T08, and real stack integration remains T09.
+- Verification was repeated successfully before committing T06: all 127 PostgreSQL tests passed.
 
 ## Completed Review — T05
 
@@ -46,6 +62,7 @@
 - README explains bearer URL lifetime, access tokens after logout, application-role changes, object deletion/replacement, and the distinction between URL issuance and a completed transfer.
 - Real MinIO transfer and bucket-policy verification remain T09; metadata caching, schema, and audit remain T07, T08, and T10.
 - Verification was repeated successfully before committing T05: all 107 PostgreSQL tests passed.
+- Commit: `b821801` — `feat(documents): add private 60-second download URLs`.
 
 ## Completed Review — T04
 
@@ -180,6 +197,13 @@
 - Add title search, creator filtering, and bounded pagination to the shared list.
 - Validate query inputs and maintain deterministic pagination order.
 - Test filter combinations, empty results, and page boundaries.
+- Interface: `GET /api/v1/documents/?search=<text>&creator=<user-id>&page=1&page_size=10` returns `count`, `next`, `previous`, and `results`.
+- Search is a trimmed, case-insensitive literal substring of title only, up to 255 characters. Blank search applies no title restriction; search and creator filters combine with AND.
+- Creator is a positive signed-64-bit integer identifier; an unknown valid identifier produces an empty page rather than 404. The filter never changes shared access permissions.
+- Pagination defaults to 10 items and allows explicit sizes from 1 through 100. Page numbers must be positive integers. Invalid inputs return field-specific 400 responses; a valid page beyond the result set returns 404. An empty result has a valid first page.
+- Apply filtering before pagination and retain descending creation time/id ordering. Page links preserve query parameters. Detail, upload, update, deletion, and download contracts remain unchanged.
+- Test-first: exercise the actual list API with real database rows, including role access, filter combinations, literal/Unicode search, invalid inputs, deterministic pages, page-size limits, and navigation links. Update earlier read tests for the approved paginated response.
+- Run the full PostgreSQL suite and migration check; stop for shared review before committing T06 or starting caching task T07.
 
 ### Task 7: T07 — Metadata caching
 

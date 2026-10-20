@@ -18,9 +18,11 @@ from .exceptions import (
     DocumentUpdateUnavailable,
 )
 from .models import Document
+from .pagination import DocumentPagination
 from .permissions import DocumentRolePermission
 from .serializers import (
     DocumentDownloadSerializer,
+    DocumentListFilterSerializer,
     DocumentSerializer,
     DocumentUpdateSerializer,
     DocumentUploadSerializer,
@@ -38,6 +40,7 @@ logger = logging.getLogger(__name__)
 class DocumentListCreateView(generics.ListCreateAPIView):
     queryset = Document.objects.order_by("-created_at", "-id")
     serializer_class = DocumentSerializer
+    pagination_class = DocumentPagination
     permission_classes = [DocumentRolePermission]
     parser_classes = [MultiPartParser, FormParser]
     http_method_names = ["get", "head", "post", "options"]
@@ -46,6 +49,18 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         if self.request.method == "POST":
             return DocumentUploadSerializer
         return super().get_serializer_class()
+
+    def filter_queryset(self, queryset):
+        filters = DocumentListFilterSerializer(data=self.request.query_params.dict())
+        filters.is_valid(raise_exception=True)
+        queryset = super().filter_queryset(queryset)
+        search = filters.validated_data.get("search")
+        if search:
+            queryset = queryset.filter(title__icontains=search)
+        creator = filters.validated_data.get("creator")
+        if creator is not None:
+            queryset = queryset.filter(creator_id=creator)
+        return queryset
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

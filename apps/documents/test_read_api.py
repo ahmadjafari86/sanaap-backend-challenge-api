@@ -61,11 +61,11 @@ class DocumentReadAPITests(APITestCase):
 
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 self.assertEqual(
-                    {document["id"] for document in response.data},
+                    {document["id"] for document in response.data["results"]},
                     {self.first.pk, self.second.pk, self.third.pk},
                 )
                 self.assertEqual(
-                    {document["creator"] for document in response.data},
+                    {document["creator"] for document in response.data["results"]},
                     {self.owner.pk, self.other_owner.pk},
                 )
 
@@ -88,18 +88,20 @@ class DocumentReadAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            [document["id"] for document in response.data],
+            [document["id"] for document in response.data["results"]],
             [self.third.pk, self.first.pk, self.second.pk],
         )
 
-    def test_empty_list_returns_an_empty_array(self):
+    def test_empty_list_returns_an_empty_first_page(self):
         self.client.force_authenticate(user=self.readers[User.Role.VIEWER])
         Document.objects.all().delete()
 
         response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data, [])
+        self.assertEqual(response.data, {
+            "count": 0, "next": None, "previous": None, "results": [],
+        })
 
     def test_missing_document_returns_not_found(self):
         self.client.force_authenticate(user=self.readers[User.Role.VIEWER])
@@ -193,5 +195,5 @@ class DocumentReadAPITests(APITestCase):
         self.assertEqual(detail.data["content_type"], "image/png")
         self.assertEqual(detail.data["file_size"], 128)
         self.assertEqual(detail.data["original_filename"], "sample.png")
-        for document in listing.data:
+        for document in listing.data["results"]:
             self.assertEqual(set(document), fields)

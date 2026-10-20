@@ -6,6 +6,11 @@ MAX_IMAGE_SIZE = 10 * 1024 * 1024
 ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG"}
 
 
+class DocumentListFilterSerializer(serializers.Serializer):
+    search = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    creator = serializers.IntegerField(min_value=1, max_value=2**63 - 1, required=False)
+
+
 class DocumentUploadSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255)
     file = serializers.ImageField()

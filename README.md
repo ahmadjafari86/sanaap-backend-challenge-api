@@ -46,6 +46,35 @@ Feature branches start from `develop` and return through pull requests.
 Release branches prepare delivery to `main` and are merged back into
 `develop`. Released versions are tagged.
 
+## Searching and browsing documents
+
+All three authenticated roles share `GET /api/v1/documents/`. Its response now
+contains `count`, `next`, `previous`, and `results`; read document metadata from
+`results` rather than a top-level array. Documents appear newest first, with
+descending id resolving equal creation times.
+
+Optional query parameters:
+
+| Parameter | Behavior |
+| --- | --- |
+| `search` | Case-insensitive literal substring of title only, up to 255 characters. Leading/trailing whitespace is trimmed; blank text leaves the title unfiltered. |
+| `creator` | Exact positive integer user id, at most 9223372036854775807. A valid id without documents returns an empty first page. |
+| `page` | Positive integer page number; defaults to 1. |
+| `page_size` | Items per page, from 1 to 100; defaults to 10. |
+
+For example, `/api/v1/documents/?search=report&creator=3&page_size=5` returns
+documents whose titles contain `report` and whose creator id is 3. Filters apply
+before pagination. Follow `next` and `previous` to retain the filters and page
+size; either link is `null` when there is no corresponding page. Empty results
+have `count: 0`, `results: []`, and both links `null` on page 1.
+
+Invalid parameter values return HTTP 400 with an error under the corresponding
+field name. A valid page number beyond the results returns HTTP 404. Filtering
+does not restrict shared access to the authenticated user's own documents and
+does not affect detail, upload, update, deletion, or download endpoints.
+Page-number pagination is not a snapshot: inserts or deletions between requests
+can shift which documents fall on later pages.
+
 ## Private document downloads
 
 An authenticated application admin, editor, or viewer can request

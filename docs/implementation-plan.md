@@ -54,8 +54,8 @@
 - [ ] Verify tests and commit.
 
 ## 4. Querying, Caching, and API Documentation
-- [ ] Add title search, creator filtering, and pagination.
-- [ ] Test filtering and pagination.
+- [x] Add title search, creator filtering, and pagination (T06 reviewed by user).
+- [x] Test filtering and pagination, including combinations, validation, size limits, and page navigation (T06 reviewed by user).
 - [ ] Cache document metadata for 60 seconds.
 - [ ] Test invalidation after update and deletion.
 - [ ] Test database fallback when Redis is unavailable.
