@@ -67,7 +67,7 @@ class DocumentDeleteAPITests(APITestCase):
     def test_admin_can_delete_another_users_document_only_after_commit(self):
         self.client.force_authenticate(user=self.admin)
 
-        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+        with self.captureOnCommitCallbacks(execute=True):
             response = self.client.delete(self.url)
 
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
@@ -75,7 +75,6 @@ class DocumentDeleteAPITests(APITestCase):
             self.assertFalse(Document.objects.filter(pk=self.document.pk).exists())
             self.assertTrue(self.storage.exists(self.document.object_key))
 
-        self.assertEqual(len(callbacks), 1)
         self.assertFalse(self.storage.exists(self.document.object_key))
         self.assertTrue(Document.objects.filter(pk=self.other_document.pk).exists())
         self.assertTrue(self.storage.exists(self.other_document.object_key))

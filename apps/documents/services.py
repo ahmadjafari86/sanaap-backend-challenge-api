@@ -5,6 +5,7 @@ from uuid import uuid4
 from django.core.files.storage import default_storage
 from django.db import transaction
 
+from .caching import invalidate_document_metadata
 from .models import Document
 
 logger = logging.getLogger(__name__)
@@ -78,10 +79,16 @@ def update_document(*, document_id, title=None, uploaded_file=None):
         with transaction.atomic():
             document = Document.objects.select_for_update().get(pk=document_id)
             previous_key = document.object_key
+            previous_version = document.metadata_version
 
             for field, value in changes.items():
                 setattr(document, field, value)
-            document.save(update_fields=[*changes, "updated_at"])
+            document.metadata_version = uuid4()
+            document.save(update_fields=[*changes, "updated_at", "metadata_version"])
+
+            transaction.on_commit(
+                partial(invalidate_document_metadata, document.pk, previous_version),
+            )
 
             if stored_key is not None:
                 transaction.on_commit(partial(_delete_document_object, previous_key))
@@ -97,7 +104,11 @@ def delete_document(*, document_id):
     with transaction.atomic():
         document = Document.objects.select_for_update().get(pk=document_id)
         object_key = document.object_key
+        metadata_version = document.metadata_version
         document.delete()
+        transaction.on_commit(
+            partial(invalidate_document_metadata, document_id, metadata_version),
+        )
         transaction.on_commit(partial(_delete_document_object, object_key))
 
 

@@ -116,7 +116,7 @@ class DocumentUpdateAPITests(APITestCase):
                 expected_bytes = uploaded_file.read()
                 uploaded_file.seek(0)
 
-                with self.captureOnCommitCallbacks(execute=True) as callbacks:
+                with self.captureOnCommitCallbacks(execute=True):
                     response = self.client.patch(
                         self.url, {"file": uploaded_file}, format="multipart",
                     )
@@ -128,7 +128,6 @@ class DocumentUpdateAPITests(APITestCase):
                         self.storage.open(self.document.object_key).read(), expected_bytes,
                     )
 
-                self.assertEqual(len(callbacks), 1)
                 self.assertFalse(self.storage.exists(previous_key))
                 self.assertEqual(self.document.title, "Original image")
                 self.assertEqual(self.document.creator_id, self.owner.pk)

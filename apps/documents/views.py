@@ -11,6 +11,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from urllib3.exceptions import HTTPError
 
+from .caching import get_document_metadata
 from .exceptions import (
     DocumentCreationUnavailable,
     DocumentDeletionUnavailable,
@@ -87,6 +88,20 @@ class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = DocumentSerializer
     permission_classes = [DocumentRolePermission]
     http_method_names = ["get", "head", "put", "patch", "delete", "options"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.request.method in ("GET", "HEAD"):
+            return queryset.only("id", "metadata_version")
+        return queryset
+
+    def retrieve(self, request, *args, **kwargs):
+        document = self.get_object()
+        try:
+            metadata = get_document_metadata(document=document)
+        except Document.DoesNotExist as error:
+            raise Http404 from error
+        return Response(metadata)
 
     def get_serializer_class(self):
         if self.request.method in ("PUT", "PATCH"):

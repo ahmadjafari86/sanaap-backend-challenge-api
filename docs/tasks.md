@@ -23,7 +23,7 @@
 | T04 | Document deletion after successful database commit | Mandatory | Completed; reviewed by user |
 | T05 | Private download URLs valid for 60 seconds | Mandatory | Completed; reviewed by user |
 | T06 | Title search, creator filtering, and pagination | Mandatory | Completed; reviewed by user |
-| T07 | Resilient document metadata caching | Mandatory | Pending |
+| T07 | Resilient document metadata caching | Mandatory | Completed; reviewed by user |
 | T08 | OpenAPI, Swagger, and user documentation | Mandatory | Pending |
 | T09 | Mandatory integration checks and documents PR | Mandatory | Pending |
 | T10 | Audit logging | Optional, included in scope | Pending |
@@ -31,6 +31,21 @@
 | T12 | Celery background document storage | Optional, included in scope | Pending |
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Pending |
 | T14 | Final regression checks and Git Flow release | Delivery | Pending |
+
+## Completed Review — T07
+
+- The user approved the shared review of T07 and authorized proceeding to T08 after its commit.
+- Added a 60-second Redis cache for individual GET/HEAD document metadata. Lists and signed download URLs do not use it, and response fields remain unchanged.
+- Authentication, application-role checks, object permissions, and a small database existence/version probe precede cache access. Hits skip the full metadata fetch and serialization; PostgreSQL is still required.
+- Added an internal UUID `metadata_version` and migration 0002. Successful metadata/file updates rotate the version inside the transaction. Keys include document id and version, so delayed fills and failed invalidations cannot make an old version current.
+- Updates and deletions schedule best-effort invalidation after commit. Rollback preserves the previous version and cache entry. Cache read/write/delete exceptions are redacted and cannot interrupt database-backed reads, committed writes, or file cleanup.
+- Added 22 cache tests covering expiry, shared access/JWT ordering, missing rows, commit/rollback timing, equal-timestamp rollback/retry, Redis errors, replacement metadata, isolated entries, and delayed-fill races with update/deletion. Existing storage tests retain state/timing assertions rather than exact callback counts.
+- Test-first evidence: the cache tests failed for missing cache behavior before implementation; the local suite then passed with only two PostgreSQL-specific concurrency tests skipped.
+- Verification: `docker compose exec -T backend python manage.py test --noinput` — all 149 tests passed on PostgreSQL, with no skipped tests. Migration dry-run reported no changes, `showmigrations documents` confirmed migration 0002 applied, and `git diff --check` passed.
+- Independent read-only code review found no Critical, Important, or Minor issues. The reviewer independently ran the cache tests, checked migration drift, and verified migration of an existing document row preserves its metadata and supplies a UUID version.
+- README explains the cache/version contract, database dependency, outage fallback, old-key expiry, and version maintenance for direct database edits outside the service.
+- Real deployed Redis outage/MinIO/clean-start integration remains T09; full schema/docs remain T08 and audit remains T10.
+- Verification was repeated successfully before committing T07: all 149 PostgreSQL tests passed.
 
 ## Completed Review — T06
 
@@ -47,6 +62,7 @@
 - README documents query parameters, errors, the changed list envelope, navigation, and the possibility of page shifts when data changes between requests.
 - Metadata caching remains T07, full OpenAPI/Swagger remains T08, and real stack integration remains T09.
 - Verification was repeated successfully before committing T06: all 127 PostgreSQL tests passed.
+- Commit: `ad78e36` — `feat(documents): add validated filtering and pagination`.
 
 ## Completed Review — T05
 
@@ -211,6 +227,13 @@
 - Invalidate affected entries after successful updates or deletions.
 - Redis read, write, or invalidation failures must not prevent normal database-backed reads.
 - Never cache presigned URLs. Test invalidation and stale-data/concurrent-update cases.
+- Cache only the individual detail GET/HEAD metadata payload, with an explicit 60-second TTL. Lists and download responses do not use this cache.
+- Authentication, application-role checks, object permissions, and a database existence/version probe precede cache access. A hit skips the full metadata fetch and serialization, while PostgreSQL remains required for each detail read.
+- Add an internal UUID metadata version and include it in cache keys. Rotate it with each successful metadata/image update; do not expose it in API responses. A stale in-flight reader can populate only its old version's key, which later reads cannot use.
+- Schedule best-effort old-version invalidation after update/deletion commits. Rollback discards invalidation; failed Redis deletion cannot make old metadata current again. Old entries expire within 60 seconds.
+- Cache get/set/delete failures fall back safely without exposing backend exception details or turning committed writes into failures. Missing documents always return 404 even if old cache entries remain.
+- Verify cache hits/expiry, roles/JWT before cache access, post-commit timing, rollback, Redis read/write/invalidation errors, replacement metadata, and delayed cache-fill races with update/deletion. Use real in-memory caching for deterministic tests and PostgreSQL for concurrent interleavings; deployed Redis failure checks remain T09.
+- Generate and verify the metadata-version migration, run the full PostgreSQL suite, and stop for shared review before committing T07 or starting T08.
 
 ### Task 8: T08 — Schema and documentation
 

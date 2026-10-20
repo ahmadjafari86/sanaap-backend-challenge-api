@@ -56,11 +56,11 @@
 ## 4. Querying, Caching, and API Documentation
 - [x] Add title search, creator filtering, and pagination (T06 reviewed by user).
 - [x] Test filtering and pagination, including combinations, validation, size limits, and page navigation (T06 reviewed by user).
-- [ ] Cache document metadata for 60 seconds.
-- [ ] Test invalidation after update and deletion.
-- [ ] Test database fallback when Redis is unavailable.
+- [x] Cache individual document metadata for 60 seconds with database-backed version checks (T07 reviewed by user).
+- [x] Test after-commit invalidation, rollback, and concurrent cache-fill races with updates/deletion (T07 reviewed by user).
+- [x] Test database fallback for cache read/write/invalidation errors (T07 reviewed by user; deployed Redis outage check remains T09).
 - [x] Never cache presigned URLs in the storage backend or HTTP responses (T05 reviewed by user).
-- [ ] Check permissions before document metadata cache access (T07).
+- [x] Check authentication, role/object permissions, and document existence/version before metadata cache access (T07 reviewed by user).
 - [ ] Add OpenAPI schema and Swagger UI.
 - [ ] Verify tests and commit.
 

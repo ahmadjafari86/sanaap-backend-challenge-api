@@ -111,6 +111,8 @@ DATABASES = {
     "default": env.db("DATABASE_URL"),
 }
 
+DOCUMENT_METADATA_CACHE_TTL_SECONDS = 60
+
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",

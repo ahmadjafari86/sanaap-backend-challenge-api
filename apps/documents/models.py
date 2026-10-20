@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from django.conf import settings
 from django.db import models
 
@@ -8,6 +10,7 @@ class Document(models.Model):
     object_key = models.CharField(max_length=1024, unique=True)
     content_type = models.CharField(max_length=100)
     file_size = models.PositiveBigIntegerField()
+    metadata_version = models.UUIDField(default=uuid4, editable=False)
 
     creator = models.ForeignKey(
         settings.AUTH_USER_MODEL,

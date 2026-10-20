@@ -75,6 +75,30 @@ does not affect detail, upload, update, deletion, or download endpoints.
 Page-number pagination is not a snapshot: inserts or deletions between requests
 can shift which documents fall on later pages.
 
+## Document metadata cache
+
+Individual document GET/HEAD responses cache only their public metadata in
+Redis for 60 seconds. Authentication and role/object permission checks run
+before cache access. Every read first checks the document's existence and
+internal metadata version in PostgreSQL. A cache hit skips the full metadata
+fetch and serialization; PostgreSQL remains required even when Redis has a
+cached response. Lists and signed download URLs do not use this cache.
+
+Updates rotate an internal UUID version in the database transaction. After an
+update or deletion commits, the service attempts to invalidate the previous
+version's cache entry. A rollback keeps the previous version and discards that
+invalidation. Delayed readers can populate an old version's key after
+invalidation, but subsequent reads cannot use it. Equal timestamps and rolled
+back updates do not reuse a version. Missing records return 404 even if a cache
+entry survives.
+
+Redis read, write, and invalidation errors are logged without backend exception
+details and do not prevent database-backed reads or committed writes. A failed
+cache read also skips cache population for that request. Old keys left by a
+failed invalidation expire within 60 seconds. The version field is internal and
+is absent from API responses. Direct database edits outside the document service
+must also change `metadata_version` when they change document metadata.
+
 ## Private document downloads
 
 An authenticated application admin, editor, or viewer can request
