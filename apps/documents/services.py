@@ -91,3 +91,11 @@ def update_document(*, document_id, title=None, uploaded_file=None):
         if stored_key is not None:
             _delete_document_object(stored_key)
         raise
+
+
+def delete_document(*, document_id):
+    with transaction.atomic():
+        document = Document.objects.select_for_update().get(pk=document_id)
+        object_key = document.object_key
+        document.delete()
+        transaction.on_commit(partial(_delete_document_object, object_key))

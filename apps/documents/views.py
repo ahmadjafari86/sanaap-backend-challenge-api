@@ -8,7 +8,11 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from urllib3.exceptions import HTTPError
 
-from .exceptions import DocumentCreationUnavailable, DocumentUpdateUnavailable
+from .exceptions import (
+    DocumentCreationUnavailable,
+    DocumentDeletionUnavailable,
+    DocumentUpdateUnavailable,
+)
 from .models import Document
 from .permissions import DocumentRolePermission
 from .serializers import (
@@ -16,7 +20,7 @@ from .serializers import (
     DocumentUpdateSerializer,
     DocumentUploadSerializer,
 )
-from .services import create_document, update_document
+from .services import create_document, delete_document, update_document
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +57,11 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         )
 
 
-class DocumentDetailView(generics.RetrieveUpdateAPIView):
+class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
     permission_classes = [DocumentRolePermission]
-    http_method_names = ["get", "head", "put", "patch", "options"]
+    http_method_names = ["get", "head", "put", "patch", "delete", "options"]
 
     def get_serializer_class(self):
         if self.request.method in ("PUT", "PATCH"):
@@ -87,3 +91,15 @@ class DocumentDetailView(generics.RetrieveUpdateAPIView):
         return Response(
             DocumentSerializer(document, context=self.get_serializer_context()).data,
         )
+
+    def destroy(self, request, *args, **kwargs):
+        try:
+            document = self.get_object()
+            delete_document(document_id=document.pk)
+        except Document.DoesNotExist as error:
+            raise Http404 from error
+        except DatabaseError as error:
+            logger.error("Document deletion failed (%s).", type(error).__name__)
+            raise DocumentDeletionUnavailable() from error
+
+        return Response(status=status.HTTP_204_NO_CONTENT)

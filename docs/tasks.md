@@ -20,7 +20,7 @@
 | T01 | Document upload API | Mandatory | Completed; reviewed by user |
 | T02 | Shared document list and detail API | Mandatory | Completed; reviewed by user |
 | T03 | Metadata updates and safe image replacement | Mandatory | Completed; reviewed by user |
-| T04 | Document deletion after successful database commit | Mandatory | Pending |
+| T04 | Document deletion after successful database commit | Mandatory | Completed; reviewed by user |
 | T05 | Private download URLs valid for 60 seconds | Mandatory | Pending |
 | T06 | Title search, creator filtering, and pagination | Mandatory | Pending |
 | T07 | Resilient document metadata caching | Mandatory | Pending |
@@ -31,6 +31,20 @@
 | T12 | Celery background document storage | Optional, included in scope | Pending |
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Pending |
 | T14 | Final regression checks and Git Flow release | Delivery | Pending |
+
+## Completed Review — T04
+
+- The user approved the shared review of T04 and authorized proceeding to T05 after its commit.
+- Added application-admin-only DELETE with an empty HTTP 204 response. Anonymous/invalid/inactive JWT requests are rejected, and editor/viewer/unknown roles cannot delete.
+- The deletion service locks and rereads the current row, deletes it inside an atomic block, and schedules current-object cleanup after commit.
+- Missing/repeated deletion returns 404. Database failure returns safe 503 and preserves the row/file, including failure after actual SQL deletion. Outer rollbacks discard storage cleanup.
+- A missing storage object does not block metadata deletion. Post-commit storage failure is logged without exposing exception details; the committed deletion remains successful and its orphan is documented in README.
+- Added 17 tests, including PostgreSQL deletion during an in-flight replacement and a stale-view interleaving that verifies cleanup of the current storage key.
+- Test-first evidence: authorized DELETE failed with 405 before implementation; the new tests then passed locally with only the PostgreSQL concurrency case skipped.
+- Final verification: `docker compose exec -T backend python manage.py test --noinput` — all 93 tests passed on PostgreSQL, with no skipped tests.
+- Migration dry-run reported no changes; `git diff --check` passed. Independent read-only code review found no Critical, Important, or Minor issues.
+- Real MinIO checks, cache invalidation, full schema/docs, and audit records remain assigned to T09, T07, T08, and T10. Automatic orphan reconciliation remains a documented limitation.
+- Verification was repeated successfully before committing T04: all 93 PostgreSQL tests passed.
 
 ## Completed Review — T03
 
@@ -45,6 +59,7 @@
 - Migration dry-run reported no changes; `git diff --check` passed.
 - README documents crash/cleanup, lost-acknowledgement, backend renaming, and outer-transaction rollback windows. Automatic orphan reconciliation is not implemented.
 - Verification was repeated successfully before committing T03: all 76 PostgreSQL tests passed.
+- Commit: `9edd930` — `feat(documents): add safe metadata and image updates`.
 
 ## Completed Review — T02
 
@@ -122,6 +137,13 @@
 - Delete storage objects only after the corresponding database deletion commits.
 - Test rollback and storage cleanup failure without claiming that database and MinIO operations share a transaction.
 - Record cleanup limitations for the delivery documentation.
+- Interface: `DELETE /api/v1/documents/<id>/` returns empty HTTP 204 to an application admin, including for another user's document. Missing/already-deleted documents return 404.
+- Lock and reread the current row before deletion so a concurrent replacement's current file is targeted, not a stale key from the view.
+- Use the existing best-effort storage cleanup callback. A post-commit storage outage is logged and leaves an orphan, while the successful database deletion still returns 204.
+- Database errors return safe HTTP 503 and must preserve the row and file; outer rollbacks discard the cleanup callback.
+- Verify unauthorized/JWT access, missing/repeated deletion, failures before and after the row deletion, transaction timing, and replacement/deletion interleavings.
+- Test-first: add deletion HTTP/state tests; expect authorized DELETE to fail with 405 before implementation. Run the full PostgreSQL suite, including transaction/concurrency tests, and migration checks.
+- Stop for shared review before committing T04 and starting download task T05.
 
 ### Task 5: T05 — Private downloads
 

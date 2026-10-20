@@ -54,6 +54,12 @@ locks and rereads the document row so concurrent replacements use its current
 storage key. The previous object is deleted only after the database transaction
 commits. Metadata-only updates retain the image and original creator.
 
+Document deletion also locks and rereads the current row, removes its metadata
+inside the transaction, and deletes its current storage object after commit.
+If the storage object is already missing, metadata deletion can still succeed.
+If post-commit storage cleanup fails, the API still returns HTTP 204 because
+the database deletion has committed; the private orphan is logged for cleanup.
+
 If recording a replacement fails, the service attempts to remove the new object
 and preserves the previous reference. Cleanup errors are logged; failure to
 delete an old object after commit does not undo a successful update.
