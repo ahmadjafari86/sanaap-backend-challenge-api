@@ -160,3 +160,105 @@ class AuthenticationTests(APITestCase):
                     response.status_code,
                     status.HTTP_401_UNAUTHORIZED,
                 )
+
+
+class UserManagementTests(APITestCase):
+    users_url = "/api/v1/users/"
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_user(
+            username="application-admin",
+            role=User.Role.ADMIN,
+        )
+        cls.editor = User.objects.create_user(
+            username="editor",
+            role=User.Role.EDITOR,
+        )
+        cls.viewer = User.objects.create_user(
+            username="viewer",
+            role=User.Role.VIEWER,
+        )
+
+    def test_anonymous_user_cannot_list_users(self):
+        response = self.client.get(self.users_url)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_editor_and_viewer_cannot_manage_users(self):
+        for user in (self.editor, self.viewer):
+            with self.subTest(role=user.role):
+                self.client.force_authenticate(user=user)
+
+                response = self.client.get(self.users_url)
+                self.assertEqual(
+                    response.status_code,
+                    status.HTTP_403_FORBIDDEN,
+                )
+
+                response = self.client.post(
+                    self.users_url,
+                    {
+                        "username": f"created-by-{user.role}",
+                        "password": "Assessment-new-password-93!",
+                        "role": User.Role.ADMIN,
+                    },
+                    format="json",
+                )
+                self.assertEqual(
+                    response.status_code,
+                    status.HTTP_403_FORBIDDEN,
+                )
+
+        self.assertFalse(
+            User.objects.filter(
+                username__in=["created-by-editor", "created-by-viewer"],
+            ).exists()
+        )
+
+    def test_django_superuser_without_admin_role_is_denied(self):
+        self.viewer.is_staff = True
+        self.viewer.is_superuser = True
+        self.viewer.save(update_fields=["is_staff", "is_superuser"])
+        self.client.force_authenticate(user=self.viewer)
+
+        response = self.client.get(self.users_url)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_application_admin_can_create_user_with_hashed_password(self):
+        self.client.force_authenticate(user=self.admin)
+        password = "Assessment-new-password-93!"
+
+        response = self.client.post(
+            self.users_url,
+            {
+                "username": "new-editor",
+                "email": "editor@example.com",
+                "password": password,
+                "role": User.Role.EDITOR,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertNotIn("password", response.data)
+
+        user = User.objects.get(username="new-editor")
+        self.assertTrue(user.check_password(password))
+        self.assertEqual(user.role, User.Role.EDITOR)
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+
+    def test_application_admin_can_change_user_role(self):
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.patch(
+            f"{self.users_url}{self.viewer.pk}/",
+            {"role": User.Role.EDITOR},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.viewer.refresh_from_db()
+        self.assertEqual(self.viewer.role, User.Role.EDITOR)
