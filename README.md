@@ -184,7 +184,7 @@ docker compose exec -T backend python manage.py spectacular --validate --fail-on
 
 The schema is generated from the current implementation. Tests validate its
 request/response separation, binary multipart fields, query bounds, bearer
-security, and error statuses. Optional audit logs, Nginx, Celery, and WebSocket
+security, and error statuses. Audit events are described below. Nginx, Celery, and WebSocket
 notifications remain tracked in [the task queue](docs/tasks.md).
 
 Run the real-service integration checks separately:
@@ -201,7 +201,8 @@ and MinIO endpoint. The existing stack keeps running.
 
 Checks cover JWT roles, exact upload/download bytes, private bucket access,
 actual 60-second URL expiration, replacement/deletion cleanup, and recovery
-from Redis and MinIO outages. Allow several minutes, including the expiration
+from Redis and MinIO outages, plus durable audit records for every tested
+operation. Allow several minutes, including the expiration
 wait. The command stops only its disposable services during outage checks,
 then removes its own containers and volumes and verifies that all pre-existing
 volumes remain. If cleanup fails, it reports the private temporary directory
@@ -329,3 +330,47 @@ outer commit. An outer rollback preserves the old reference and object but can
 leave the new upload unreferenced, because Django has no rollback callback for
 this cleanup. The API currently uses the service transaction rather than an
 outer request transaction.
+
+## Document audit events
+
+`DocumentAuditEvent` stores the actor id, action (`create`, `update`, `delete`,
+or `download_url`), document id, UTC `occurred_at`, `success`/`failure` outcome,
+and HTTP status code. Events begin with this feature's deployment; historical
+operations are not reconstructed. IDs are snapshots without foreign keys,
+so deleting a document or user retains its audit history.
+
+Successful mutations and their audit events commit in the same database
+transaction. If the success event cannot be recorded, the API returns its
+existing safe 503 response and rolls back the mutation; new uploads use the
+existing best-effort compensation. A deletion whose metadata committed but
+whose object cleanup failed still records a successful deletion with status
+204. Cleanup failures remain in the redacted operator logs.
+
+Failed API attempts record authentication, permission, validation, missing-id,
+and service failures. Anonymous or invalid-token attempts have a null actor;
+authenticated identities come from the server. Missing document ids are kept
+when representable as database integers, otherwise stored as null. Failure
+auditing is best effort: database outages or a process crash can prevent its
+record, and it never replaces the original error response.
+
+`download_url` means the server produced a URL for the response. It does not
+prove client receipt or a completed MinIO transfer. No request/response bodies,
+headers, passwords, tokens, signed URLs, filenames, object keys, or exception
+text are stored in events. Routine list/detail/HEAD/OPTIONS requests and
+unsupported methods do not produce operation events. Direct internal service
+calls may have a null actor when none is supplied; failed attempts are captured
+at the API boundary.
+
+There is no public audit endpoint or editable audit administration page.
+Operators can inspect records through `make shell`:
+
+```python
+from apps.documents.models import DocumentAuditEvent
+
+list(DocumentAuditEvent.objects.filter(document_id=123).values(
+    "actor_id", "action", "document_id", "occurred_at", "outcome", "status_code",
+)[:20])
+```
+
+Application code appends events; database administrators can still modify
+them. Cryptographic tamper evidence and automated retention are not implemented.

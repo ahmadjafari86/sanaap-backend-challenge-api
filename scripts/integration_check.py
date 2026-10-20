@@ -170,9 +170,9 @@ def main():
                        input_text=json.dumps(value) if value is not None else None)
 
         shell(
-            "import json, sys; from django.contrib.auth import get_user_model; from apps.documents.models import Document; "
+            "import json, sys; from django.contrib.auth import get_user_model; from apps.documents.models import Document, DocumentAuditEvent; "
             "User = get_user_model(); data = json.load(sys.stdin); "
-            "assert User.objects.count() == 0 and Document.objects.count() == 0; "
+            "assert User.objects.count() == 0 and Document.objects.count() == 0 and DocumentAuditEvent.objects.count() == 0; "
             "user = User.objects.create_user(username='integration-admin', password=data['password'], role='admin'); "
             "assert not user.is_staff and not user.is_superuser",
             {"password": password},
@@ -277,6 +277,37 @@ def main():
               f"assert not default_storage.exists({first_key!r}) and not default_storage.exists({second_key!r}); "
               f"default_storage.delete({orphan_key!r})")
         print("Actual URL expiry, logout semantics and successful document/object deletion passed.", flush=True)
+        expected_events = [
+            ["integration-editor", "create", row["id"], "success", 201]
+            for row in (document, second, orphan)
+        ] + [
+            ["integration-viewer", "create", None, "failure", 403],
+            ["integration-editor", "create", None, "failure", 503],
+            ["integration-editor", "update", document["id"], "success", 200],
+            ["integration-editor", "update", second["id"], "success", 200],
+            ["integration-editor", "update", second["id"], "failure", 503],
+            ["integration-editor", "delete", document["id"], "failure", 403],
+        ] + [
+            ["integration-admin", "delete", row["id"], "success", 204]
+            for row in (document, second, orphan)
+        ] + [
+            [f"integration-{role}", "download_url", document["id"], "success", 200]
+            for role in ("admin", "editor", "viewer")
+        ] + [
+            ["integration-viewer", "download_url", second["id"], "success", 200]
+            for _ in range(3)
+        ] + [["integration-viewer", "download_url", orphan["id"], "success", 200]]
+        shell(
+            "import json, sys; from collections import Counter; from django.contrib.auth import get_user_model; "
+            "from apps.documents.models import Document, DocumentAuditEvent; "
+            "identities = dict(get_user_model().objects.values_list('username', 'pk')); "
+            "expected = Counter((identities[row[0]], *row[1:]) for row in json.load(sys.stdin)); "
+            "actual = Counter(DocumentAuditEvent.objects.values_list('actor_id', 'action', 'document_id', 'outcome', 'status_code')); "
+            "assert actual == expected and not Document.objects.exists(); "
+            "assert DocumentAuditEvent.objects.count() == 19",
+            expected_events,
+        )
+        print("All 19 durable audit events match authenticated actors and outcomes, including deleted documents.", flush=True)
     finally:
         if active:
             config = json.loads(run(compose + ["config", "--format", "json"]))
