@@ -2,7 +2,18 @@
 
 **Goal:** Deliver the mandatory assessment requirements before optional features.
 **Spec:** docs/design.md
-**Execution:** Guided implementation in the current conversation.
+**Execution:** Agent implementation, one task at a time, followed by shared review before starting the next task.
+**Task queue:** [tasks.md](tasks.md) defines the remaining mandatory and optional work, acceptance criteria, and review checkpoints.
+
+## Execution and Git Flow
+
+- Continue document work on `feature/documents`, created from the updated `develop` branch.
+- Complete and verify one task, then present its changes and evidence for shared review.
+- Start the next task only after the current task has been reviewed with the user.
+- Keep commits scoped to a reviewed task; merge feature branches into `develop` through pull requests.
+- Start subsequent independent feature branches from updated `develop` after their prerequisites are merged.
+- Finish through a release branch, merge into `main` and back into `develop`, and tag the agreed release version.
+- Complete mandatory work and its delivery checks before optional features; optional features remain in the task queue.
 
 ## 1. Project Setup
 - [x] Add .gitignore, dependency files, .env.example, and .dockerignore.
@@ -29,6 +40,7 @@
 - [ ] Test the complete role/action matrix through document API endpoints, including downloads.
 - [x] Test rejection of invalid images and files over 10 MiB, including the exact size boundary.
 - [x] Implement document creation through the configured MinIO storage backend.
+- [x] Implement and test the upload API, including JWT, role access, validation, metadata, and safe failure responses (T01; reviewed by user).
 - [ ] Implement shared document CRUD for JPEG and PNG images.
 - [x] Generate UUID-based object keys for document uploads.
 - [ ] Issue private presigned download URLs valid for 60 seconds.
