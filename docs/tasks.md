@@ -45,7 +45,7 @@
 - Added operator-applied production Compose/TLS examples and HTTPS deployment instructions. A disposable self-signed certificate validated TLS syntax and certificate readability as the non-root Nginx user; Compose merge checks confirmed secure settings, public 80/443 ports, an internal backend and read-only mounts. No public deployment or certificate issuance/renewal was performed.
 - One independent whole-feature review found no Critical or Important issues and independently passed all 13 focused tests. Two **Minor test-coverage improvements** are deferred: force/assert a changed backend IP during recreation (Docker may reuse it), and explicitly assert download `Cache-Control: private, no-store` through the live proxy. Current DNS configuration supports address changes and existing Django tests cover the no-store response; the deployed tests do not prove those two stronger assertions.
 - Production certificate lifecycle, external TLS terminator trust, WebSocket upgrades, asynchronous storage and final release remain separate responsibilities/tasks. Proxy health checks Nginx itself; backend health is separate. Normal Nginx error logs remain diagnostic, while the access-log format excludes query strings/headers/bodies.
-- Implementation and verification are ready for a dedicated draft PR into `develop`; the shared-review gate remains pending.
+- Verified implementation checkpoint `dbd67c6` is pushed in draft [PR #5](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/5) into `develop`; the shared-review gate remains pending.
 
 ## Completed Review — T10
 
@@ -359,7 +359,7 @@
 - [x] Implement proxy/static/header/settings changes and pass the focused regressions.
 - [x] Run full PostgreSQL, migration/schema checks and the real disposable integration through Nginx, including large uploads, static bytes, backend outage/recreation and audit persistence.
 - [x] Obtain one independent whole-T11 review and resolve Important/Critical findings in one test-backed pass. No blocking findings; two Minor coverage suggestions are recorded above.
-- [ ] Commit/push a verified draft PR into `develop`; hold before merge/T12 for shared user review.
+- [x] Commit/push a verified draft PR into `develop`; hold before merge/T12 for shared user review. PR #5 is open in draft; shared user review is pending.
 
 ### Task 12: T12 — Background storage
 
