@@ -32,7 +32,7 @@ def check_documentation_access(client, password):
     # A valid admin session still does not authenticate JWT business endpoints.
     client.api("GET", "/api/v1/documents/", expected=401)
     client.http("GET", client.origin + "/admin/documents/document/")
-    client.http("POST", client.origin + "/admin/logout/", expected=302,
+    client.http("POST", client.origin + "/admin/logout/", expected=200,
                 body=urlencode({"csrfmiddlewaretoken": csrf()}).encode(),
                 headers={"Content-Type": "application/x-www-form-urlencoded"})
     assert_login_required()

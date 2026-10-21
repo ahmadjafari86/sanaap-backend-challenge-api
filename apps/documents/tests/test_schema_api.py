@@ -60,7 +60,7 @@ class DocumentationAccessTests(APITestCase):
                 response = self.client.get(url)
                 self.assertEqual(response.status_code, 200)
                 self.assertIn("no-store", response.get("Cache-Control", ""))
-        self.client.post("/admin/logout/")
+        self.assertEqual(self.client.post("/admin/logout/").status_code, 200)
         self.assert_login_required()
 
     def test_expired_session_is_denied(self):
