@@ -12,9 +12,9 @@ from django.db import transaction
 from django.test import TestCase, override_settings
 from PIL import Image
 
-from . import background, services
-from .models import Document, DocumentAuditEvent
-from .serializers import DocumentUploadSerializer
+from .. import background, services
+from ..models import Document, DocumentAuditEvent
+from ..serializers import DocumentUploadSerializer
 
 
 @override_settings(CHANNEL_LAYERS={"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}, CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})

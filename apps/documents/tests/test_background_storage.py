@@ -14,15 +14,15 @@ from django.test import SimpleTestCase
 from PIL import Image
 from rest_framework.test import APITestCase
 
-from .models import Document, DocumentAuditEvent
-from . import background
-from .serializers import DocumentUploadSerializer
+from ..models import Document, DocumentAuditEvent
+from .. import background
+from ..serializers import DocumentUploadSerializer
 
 
 class StorageInitializationTests(SimpleTestCase):
     def test_startup_initializes_bucket_for_the_configured_minio_subclass(self):
         from django.core.management import call_command
-        from .storage import DocumentStorage
+        from ..storage import DocumentStorage
         class Client:
             created = False
             def bucket_exists(self, bucket_name):
@@ -244,7 +244,7 @@ class BackgroundWorkerTests(TestCase):
         self.assertFalse(Document.objects.exists())
 
     def test_deleted_pending_document_is_not_resurrected(self):
-        from .services import delete_document
+        from ..services import delete_document
         document = self.accept()
         stage = Path(self.directory.name) / document.staging_key
         with self.captureOnCommitCallbacks(execute=True):
@@ -255,7 +255,7 @@ class BackgroundWorkerTests(TestCase):
         self.assertFalse(self.storage.exists(document.object_key))
 
     def test_state_transition_invalidates_cached_pending_metadata(self):
-        from .caching import get_document_metadata
+        from ..caching import get_document_metadata
         document = self.accept()
         self.assertEqual(get_document_metadata(document=document)["status"], "PENDING")
         self.process(document)
@@ -263,7 +263,7 @@ class BackgroundWorkerTests(TestCase):
         self.assertEqual(get_document_metadata(document=document)["status"], "READY")
 
     def test_celery_task_runs_real_storage_processing(self):
-        from .tasks import store_document
+        from ..tasks import store_document
         document = self.accept()
         with self.captureOnCommitCallbacks(execute=True):
             result = store_document.apply(args=[document.pk], throw=True)
@@ -272,7 +272,7 @@ class BackgroundWorkerTests(TestCase):
         self.assertEqual(document.status, "READY")
 
     def test_celery_retries_exhaust_at_four_persisted_attempts(self):
-        from .tasks import store_document
+        from ..tasks import store_document
         document = self.accept()
         with patch.object(self.storage, "save", side_effect=OSError("private-error")), self.assertLogs("apps.documents.background", level="WARNING"):
             with self.captureOnCommitCallbacks(execute=True):
@@ -371,7 +371,7 @@ class ConcurrentBackgroundTests(TransactionTestCase):
 
     @skipUnlessDBFeature("has_select_for_update")
     def test_delete_waits_for_upload_then_removes_committed_object(self):
-        from .services import delete_document
+        from ..services import delete_document
         self.run_race(lambda: delete_document(document_id=self.document.pk, actor_id=self.creator.pk))
         self.assertFalse(Document.objects.exists())
         self.assertFalse(self.storage.exists(self.document.object_key))
@@ -380,7 +380,7 @@ class ConcurrentBackgroundTests(TransactionTestCase):
         self.assertEqual(DocumentAuditEvent.objects.filter(action="delete", outcome="success").count(), 1)
 
     def test_rollback_compensation_cannot_delete_a_duplicate_deliverys_ready_object(self):
-        from .services import _delete_document_object
+        from ..services import _delete_document_object
         storage = FileSystemStorage(location=Path(self.directory.name) / "objects", allow_overwrite=True)
         write = background.record_document_event
         failed_once = False

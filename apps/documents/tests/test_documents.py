@@ -10,10 +10,10 @@ from django.test import SimpleTestCase, TestCase
 from PIL import Image
 from rest_framework.test import APIRequestFactory
 
-from .models import Document
-from .permissions import DocumentRolePermission
-from .serializers import DocumentUploadSerializer
-from .services import create_document
+from ..models import Document
+from ..permissions import DocumentRolePermission
+from ..serializers import DocumentUploadSerializer
+from ..services import create_document
 
 User = get_user_model()
 

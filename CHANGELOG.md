@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Read-only document metadata browsing, searching and filtering in Django admin.
+- Swagger and HTTP OpenAPI schema restricted to valid active-staff admin sessions,
+  with login redirects and no-cache responses; business APIs still use JWTs.
+- Per-application test packages, retaining all existing regression tests.
+- Interactive `make superuser` creates a Django and application admin together.
+- Continuous `make logs` supports optional `SERVICES`, with explicit Django/MinIO
+  console login instructions in the README.
+- Real-service integration checks for admin login, documentation access and logout.
+
 ## 0.1.0
 
 - Shared JPEG/PNG documents with title search, creator filtering and pagination.

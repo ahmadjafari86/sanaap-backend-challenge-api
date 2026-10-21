@@ -11,7 +11,7 @@ from django.db import OperationalError
 from django.test import TransactionTestCase, override_settings
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
-from .consumers import validate_identity
+from ..consumers import validate_identity
 
 from config.asgi import build_application
 

@@ -13,6 +13,10 @@
 - T10–T13 each use a feature branch from updated `develop` after prerequisites have been merged. Their pull requests also target `develop`.
 - T14 uses a release branch for the agreed version, merges into `main` and back into `develop`, and tags the release.
 - Do not merge or publish a release before its review checkpoint.
+- T15 is a user-requested post-release maintenance batch on `codex/admin-workflow`.
+  The user approved read-only document administration and explicitly authorized
+  merging this branch into `develop`, then `develop` into `main` after verification.
+  Keep the existing v0.1.0 tag fixed; no new release tag is part of this batch.
 
 ## Task Queue
 
@@ -32,6 +36,43 @@
 | T12 | Celery background document storage | Optional, included in scope | Completed; reviewed by user; merged into develop |
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Completed; reviewed by user; merged into develop |
 | T14 | Final regression checks and Git Flow release | Delivery | Completed; reviewed by user; v0.1.0 tagged and merged back into develop |
+| T15 | Django admin, test packages and development commands | Maintenance | Completed; design approved; 279 tests and real-service integration verified |
+
+## T15 — Administration and development workflow
+
+- Approved scope: read-only document metadata in Django admin, with search,
+  filters and Django model view permissions. All writes continue through services.
+- Both Swagger and the HTTP schema require a valid active-staff Django session,
+  redirect to admin login when denied and disable caching. Business APIs remain
+  JWT-authenticated. Tests cover expiry, logout, inactive/non-staff users and JWT-only denial.
+- Move every original test into each application's `tests` package; discovery
+  verified all 263 existing test IDs survive exactly once. Add 16 regressions for
+  administration, documentation access and one-step superuser creation.
+- `make superuser` uses Django's normal interactive command. The user manager
+  defaults superusers to application role admin while preserving ordinary viewer
+  defaults, explicit role choices and existing accounts. The manager-state
+  migration does not modify existing user roles or database columns.
+- `make logs` follows messages continuously and accepts `SERVICES=backend`;
+  a real new request was observed while following, then only the follower stopped.
+- README includes Django bootstrap and the separate local MinIO console login
+  using `.env` credentials; the login page returned HTTP 200 on port 19001.
+- The targeted access/creation tests failed before implementation and passed
+  afterward. The full PostgreSQL suite now passes all 279 tests without skips.
+  An earlier run was interrupted by PostgreSQL recovery; the healthy rerun passed.
+- Integration verifies real admin login/logout with CSRF cookies, schema/document
+  browsing and anonymous redirects through Nginx, including after backend recreation.
+  The final clean-stack run passed all 279 tests, every existing storage/cache/worker/
+  socket/proxy/outage/expiry scenario, and exactly 37 matching durable audit events.
+  Its containers/volumes were removed and all pre-existing volumes were preserved.
+- One independent review found an Important logout-status expectation in the
+  integration harness; the default logout confirmation is HTTP 200. The real
+  failure was reproduced, corrected and covered by the existing logout regression.
+  The parent also corrected the previous public-docs expectation after backend
+  recreation to require an admin-login redirect. The final complete integration
+  passes both corrections; no product or review blocker remains.
+- Delivery follows the user's authorized path through [PR #11](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/11)
+  into develop, then develop into main. No new release tag or promotion of existing
+  accounts is included.
 
 ## Completed Review — T14 (v0.1.0)
 

@@ -1,17 +1,104 @@
 import json
+from datetime import timedelta
+from urllib.parse import parse_qs, urlsplit
 
+from django.contrib.auth import get_user_model
+from django.contrib.sessions.models import Session
+from django.utils import timezone
 from drf_spectacular.validation import validate_schema
 from rest_framework import status
-from rest_framework.test import APISimpleTestCase
+from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 
-class APISchemaTests(APISimpleTestCase):
+User = get_user_model()
+
+
+class DocumentationAccessTests(APITestCase):
+    urls = ("/api/docs/", "/api/schema/", "/api/schema/?format=json")
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.password = "Documentation-test-password-92!"
+        cls.staff = User.objects.create_user(
+            username="docs-staff", password=cls.password, is_staff=True,
+        )
+        cls.application_admin = User.objects.create_user(username="api-admin", role=User.Role.ADMIN)
+
+    def assert_login_required(self):
+        for url in self.urls:
+            for method in ("get", "head", "options"):
+                with self.subTest(url=url, method=method):
+                    response = getattr(self.client, method)(url)
+                    self.assertEqual(response.status_code, 302)
+                    destination = urlsplit(response["Location"])
+                    self.assertEqual(destination.path, "/admin/login/")
+                    self.assertEqual(parse_qs(destination.query), {"next": [url]})
+                    self.assertNotIn(b"SwaggerUIBundle", response.content)
+
+    def test_anonymous_requests_redirect_to_admin_login(self):
+        self.assert_login_required()
+
+    def test_bearer_tokens_without_an_admin_session_do_not_open_documentation(self):
+        for token in (str(RefreshToken.for_user(self.staff).access_token), "invalid-token"):
+            with self.subTest(valid_token=token != "invalid-token"):
+                self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+                self.assert_login_required()
+
+    def test_application_admin_session_without_staff_access_is_denied(self):
+        self.client.force_login(self.application_admin)
+        self.assert_login_required()
+
+    def test_admin_login_opens_docs_and_logout_revokes_access(self):
+        response = self.client.post("/admin/login/?next=/api/docs/", {
+            "username": self.staff.username, "password": self.password, "next": "/api/docs/",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/api/docs/")
+        for url in self.urls:
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("no-store", response.get("Cache-Control", ""))
+        self.assertEqual(self.client.post("/admin/logout/").status_code, 200)
+        self.assert_login_required()
+
+    def test_expired_session_is_denied(self):
+        self.client.force_login(self.staff)
+        Session.objects.filter(session_key=self.client.session.session_key).update(
+            expire_date=timezone.now() - timedelta(seconds=1),
+        )
+        self.assert_login_required()
+
+    def test_deactivating_staff_revokes_documentation_access(self):
+        self.client.force_login(self.staff)
+        User.objects.filter(pk=self.staff.pk).update(is_active=False)
+        self.assert_login_required()
+
+    def test_removing_staff_access_revokes_documentation_access(self):
+        self.client.force_login(self.staff)
+        User.objects.filter(pk=self.staff.pk).update(is_staff=False)
+        self.assert_login_required()
+
+    def test_session_alone_does_not_authenticate_the_business_api(self):
+        self.client.force_login(self.staff)
+        self.assertEqual(self.client.get("/api/v1/documents/").status_code, 401)
+
+
+class APISchemaTests(APITestCase):
     schema_url = "/api/schema/"
     docs_url = "/api/docs/"
     metadata_fields = {
         "id", "title", "original_filename", "content_type", "file_size", "status",
         "creator", "created_at", "updated_at",
     }
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.staff = User.objects.create_user(username="schema-staff", is_staff=True)
+
+    def setUp(self):
+        self.client.force_login(self.staff)
 
     def get_schema(self):
         response = self.client.get(self.schema_url, HTTP_ACCEPT="application/vnd.oai.openapi+json")
@@ -31,14 +118,14 @@ class APISchemaTests(APISimpleTestCase):
     def request_schema(self, schema, operation, media_type):
         return self.resolve(schema, operation["requestBody"]["content"][media_type]["schema"])
 
-    def test_schema_is_public_even_with_an_invalid_authorization_header(self):
+    def test_schema_uses_staff_session_even_with_an_invalid_authorization_header(self):
         for token in (None, "invalid-token"):
             self.client.credentials(**({"HTTP_AUTHORIZATION": f"Bearer {token}"} if token else {}))
             schema = self.get_schema()
             self.assertTrue(schema["openapi"].startswith("3."))
             self.assertIn("title", schema["info"])
 
-    def test_swagger_is_public_uses_the_schema_route_and_does_not_persist_tokens(self):
+    def test_swagger_uses_staff_session_schema_route_and_does_not_persist_tokens(self):
         self.client.credentials(HTTP_AUTHORIZATION="Bearer invalid-token")
 
         response = self.client.get(self.docs_url)

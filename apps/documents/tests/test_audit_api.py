@@ -3,7 +3,7 @@ from io import BytesIO
 from tempfile import TemporaryDirectory
 from contextlib import nullcontext
 
-from .background import staging_storage
+from ..background import staging_storage
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -17,8 +17,8 @@ from PIL import Image
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Document, DocumentAuditEvent
-from .services import delete_document, update_document
+from ..models import Document, DocumentAuditEvent
+from ..services import delete_document, update_document
 
 User = get_user_model()
 

@@ -15,8 +15,8 @@ from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Document
-from .views import DocumentDetailView
+from ..models import Document
+from ..views import DocumentDetailView
 
 User = get_user_model()
 
