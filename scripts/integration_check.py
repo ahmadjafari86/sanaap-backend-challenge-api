@@ -21,8 +21,10 @@ import zlib
 
 if __package__:
     from .proxy_checks import check_forwarded_links, check_proxy_http, check_upload_limits
+    from .websocket_checks import SocketChecks
 else:
     from proxy_checks import check_forwarded_links, check_proxy_http, check_upload_limits
+    from websocket_checks import SocketChecks
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -169,6 +171,7 @@ def main():
     active = False
     before_volumes = set()
     clean = False
+    sockets = None
     try:
         write_environment()
         source_project = json.loads(run(base + ["config", "--format", "json"]))["name"]
@@ -235,6 +238,22 @@ def main():
 
         original, replacement = png_bytes((255, 0, 0)), png_bytes((0, 0, 255))
         editor, viewer = tokens["editor"]["access"], tokens["viewer"]["access"]
+        sockets = SocketChecks(compose, client.origin)
+        for role, pair in tokens.items():
+            sockets.open(role, pair["access"])
+        assert sockets.command("open", name="unauthenticated", origin=client.origin) == {"connected": True}
+        for origin in (None, "http://attacker.invalid"):
+            assert sockets.command("open", name="denied", origin=origin) == {"http_status": 403}
+        assert sockets.command("open", name="query", origin=client.origin, path="/ws/documents/?access=do-not-log-this-token") == {"http_status": 400}
+        for name, token in (("invalid", "invalid-private-token"), ("refresh", tokens["viewer"]["refresh"])):
+            assert sockets.command("open", name=name, origin=client.origin) == {"connected": True}
+            assert sockets.command("authenticate", name=name, access=token) == {"closed": 4401}
+        assert sockets.command("ping", name="viewer") == {"message": {"type": "pong"}}
+        # Longer than Channels Redis's five-second blocking read, with no events.
+        time.sleep(6)
+        for role in tokens:
+            assert sockets.command("ping", name=role) == {"message": {"type": "pong"}}
+        print("Live Nginx WebSocket upgrade, all JWT roles, Origin/query/refresh rejection and ping passed.", flush=True)
         print("Stopping only disposable worker to check queued acceptance and restart recovery...", flush=True)
         run(compose + ["stop", "--timeout", "3", "worker"])
         document = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Integration image"}, image=original, expected=202)
@@ -246,6 +265,10 @@ def main():
         client.api("PATCH", detail, token=editor, data={"title": "Must remain unchanged"}, expected=409)
         run(compose + ["up", "-d", "--no-deps", "--wait", "worker"])
         document = client.wait_document(document, editor)
+        for role in tokens:
+            sockets.event(role, "document.ready", document["id"])
+        assert sockets.command("receive", name="unauthenticated", timeout=6) == {"closed": 4401}
+        assert sockets.command("receive", name="viewer", timeout=.1) == {"quiet": True}
         print("PENDING 202/readability/409 gates and queued job recovery after worker restart passed.", flush=True)
         assert document["content_type"] == "image/png" and document["file_size"] == len(original)
         first_url = None
@@ -275,6 +298,8 @@ def main():
               "assert cache.get(_metadata_key(doc.pk, doc.metadata_version))['title'] == 'Integration image'")
         print("Stopping only the disposable Redis to verify real outage fallback...", flush=True)
         run(compose + ["stop", "--timeout", "3", "redis"])
+        for role in tokens:
+            assert sockets.command("receive", name=role) == {"closed": 1013}
         assert client.api("GET", detail, token=viewer)["title"] == "Integration image"
         client.api("PATCH", detail, token=editor, data={"title": "Redis outage update"})
         assert client.api("GET", detail, token=viewer)["title"] == "Redis outage update"
@@ -285,16 +310,25 @@ def main():
         client.api("DELETE", broker_detail, token=admin["access"], expected=204)
         run(compose + ["up", "-d", "--no-deps", "--wait", "redis"])
         assert client.api("GET", detail, token=viewer)["title"] == "Redis outage update"
+        for role, pair in tokens.items():
+            sockets.command("close", name=role)
+            sockets.open(role, pair["access"])
         print("Redis outage and recovery passed without stale metadata or failed writes.", flush=True)
 
         second = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Replacement image"}, image=original, expected=202)
         second = client.wait_document(second, editor)
+        for role in tokens:
+            sockets.event(role, "document.ready", second["id"])
         check_forwarded_links(client, viewer)
         boundary_id = check_upload_limits(client, image=original, editor=editor, admin=admin["access"])
+        for role in tokens:
+            sockets.event(role, "document.ready", boundary_id)
         print("Public Host/port and forwarded-header spoof checks, 10 MiB transfer, API400 and proxy413 passed.", flush=True)
         second_detail = f"/api/v1/documents/{second['id']}/"
         old_url = client.api("GET", second_detail + "download/", token=viewer)["download_url"]
         updated = client.api("PATCH", second_detail, token=editor, image=replacement)
+        for role in tokens:
+            sockets.event(role, "document.updated", second["id"])
         new_url = client.api("GET", second_detail + "download/", token=viewer)["download_url"]
         assert updated["creator"] == second["creator"] and client.http("GET", new_url) == replacement
         second_key = unquote(urlsplit(new_url).path).split("/", 2)[2]
@@ -303,6 +337,8 @@ def main():
               f"assert not default_storage.exists({old_key!r}) and default_storage.exists({second_key!r})")
         orphan = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Cleanup outage"}, image=original, expected=202)
         orphan = client.wait_document(orphan, editor)
+        for role in tokens:
+            sockets.event(role, "document.ready", orphan["id"])
         orphan_detail = f"/api/v1/documents/{orphan['id']}/"
         orphan_url = client.api("GET", orphan_detail + "download/", token=viewer)["download_url"]
         orphan_key = unquote(urlsplit(orphan_url).path).split("/", 2)[2]
@@ -315,6 +351,8 @@ def main():
         assert client.api("GET", second_detail, token=viewer) == updated
         client.api("DELETE", orphan_detail, token=admin["access"], expected=204)
         client.api("GET", orphan_detail, token=viewer, expected=404)
+        for role in tokens:
+            assert sockets.command("receive", name=role, timeout=.1) == {"quiet": True}
         run(compose + ["up", "-d", "--no-deps", "--wait", "minio"])
         assert client.http("GET", client.api("GET", second_detail + "download/", token=viewer)["download_url"]) == replacement
         failed_page = client.api("GET", "/api/v1/documents/?search=Failed%20upload", token=viewer)
@@ -342,6 +380,11 @@ def main():
               f"assert not default_storage.exists({first_key!r}) and not default_storage.exists({second_key!r}); "
               f"default_storage.delete({orphan_key!r})")
         print("Actual URL expiry, logout semantics and successful document/object deletion passed.", flush=True)
+        for role in tokens:
+            assert sockets.command("receive", name=role, timeout=.1) == {"quiet": True}
+        sockets.close()
+        sockets = None
+        print("Real worker READY/replacement notifications, no FAILED/delete messages, Redis closure/reconnect and cleanup passed.", flush=True)
         print("Stopping only disposable backend to check gateway errors/static availability and recreation recovery...", flush=True)
         run(compose + ["stop", "--timeout", "3", "backend"])
         client.http("GET", client.origin + "/api/docs/", expected=(502, 504))
@@ -422,6 +465,8 @@ def main():
                 print("Worker failure diagnostics unavailable.", file=sys.stderr, flush=True)
         raise
     finally:
+        if sockets is not None:
+            sockets.close()
         if active:
             config = json.loads(run(compose + ["config", "--format", "json"]))
             if not is_isolated_config(config, project):

@@ -9,6 +9,7 @@ from .audit import record_document_event
 from .caching import invalidate_document_metadata
 from .exceptions import DocumentNotReady
 from .models import Document, DocumentAuditEvent
+from .notifications import notify_document
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ def create_document(*, title, uploaded_file, creator):
                 outcome=DocumentAuditEvent.Outcome.SUCCESS,
                 status_code=201,
             )
+            transaction.on_commit(partial(notify_document, document.pk, "document.ready"))
             return document
     except Exception:
         _delete_document_object(stored_key)
@@ -109,6 +111,8 @@ def update_document(*, document_id, title=None, uploaded_file=None, actor_id=Non
 
             if stored_key is not None:
                 transaction.on_commit(partial(_delete_document_object, previous_key))
+
+            transaction.on_commit(partial(notify_document, document.pk, "document.updated"))
 
         return document
     except Exception:
