@@ -3,7 +3,9 @@
 The user selected **v0.1.0**. The candidate is on `release/0.1.0`, prepared from
 `develop` after the approved T13 merge `fbd4983`. Package and lockfile already
 declare `0.1.0`, so dependencies and runtime behavior need no version changes.
-This document records preparation, not publication.
+Draft [PR #8](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/8)
+targets `main` for shared release review. This document records preparation,
+not publication.
 
 ## Contents
 
@@ -32,7 +34,9 @@ This document records preparation, not publication.
 - [x] Verify development service health and preservation of all existing volumes.
 - [x] Complete one independent release review; resolve blocking findings and record
   accepted limitations without expanding the feature scope.
-- [ ] Commit/push the candidate and attach a draft `release/0.1.0` → `main` PR.
+- [x] Commit/push the candidate and attach draft
+  [PR #8](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/8),
+  `release/0.1.0` → `main`.
 
 The final disposable T14 run passed all 263 PostgreSQL regressions and every live
 gate above, including exactly 37 audit events and empty terminal staging. It

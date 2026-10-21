@@ -75,7 +75,7 @@
 - [x] Document setup, application-admin creation, auth/roles, endpoints, examples, file limits, assumptions, and limitations (T08 reviewed by user).
 - [x] Document presigned URL behavior after logout or role changes (T05 reviewed by user).
 - [x] Merge mandatory document work into develop through PR #3 (T09 reviewed by user).
-- [ ] Prepare main for delivery through the final release checkpoint (v0.1.0 candidate verified; shared release review, main merge and tag pending).
+- [ ] Prepare main for delivery through the final release checkpoint (v0.1.0 candidate verified in draft PR #8; shared release review, main merge and tag pending).
 
 ## 6. Optional Features
 - [x] Audit log: actor, action, document identifier, time, and outcome (T10 reviewed by user and merged into develop through PR #4).
