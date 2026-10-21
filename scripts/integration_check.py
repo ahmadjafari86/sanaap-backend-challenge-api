@@ -2,6 +2,7 @@
 
 import json
 from hashlib import sha256
+from http.cookiejar import CookieJar
 from pathlib import Path
 import re
 import secrets
@@ -14,16 +15,16 @@ import tempfile
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, unquote, urlsplit, urlunsplit
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, ProxyHandler, Request, build_opener
 from uuid import uuid4
 from xml.etree import ElementTree
 import zlib
 
 if __package__:
-    from .proxy_checks import check_forwarded_links, check_proxy_http, check_upload_limits
+    from .proxy_checks import check_documentation_access, check_forwarded_links, check_proxy_http, check_upload_limits
     from .websocket_checks import SocketChecks
 else:
-    from proxy_checks import check_forwarded_links, check_proxy_http, check_upload_limits
+    from proxy_checks import check_documentation_access, check_forwarded_links, check_proxy_http, check_upload_limits
     from websocket_checks import SocketChecks
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,10 +74,16 @@ def png_bytes(color):
     ])
 
 
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        return None
+
+
 class HTTPChecks:
     def __init__(self, port):
         self.origin = f"http://127.0.0.1:{port}"
-        self.opener = build_opener(ProxyHandler({}))
+        self.cookies = CookieJar()
+        self.opener = build_opener(ProxyHandler({}), HTTPCookieProcessor(self.cookies), NoRedirect())
 
     def http(self, method, url, *, body=None, headers=None, expected=200, return_headers=False):
         request = Request(url, data=body, headers=headers or {}, method=method)
@@ -213,18 +220,19 @@ def main():
             "User = get_user_model(); data = json.load(sys.stdin); "
             "assert User.objects.count() == 0 and Document.objects.count() == 0 and DocumentAuditEvent.objects.count() == 0; "
             "user = User.objects.create_user(username='integration-admin', password=data['password'], role='admin'); "
-            "assert not user.is_staff and not user.is_superuser",
+            "assert not user.is_staff and not user.is_superuser; "
+            "User.objects.create_superuser(username='integration-staff', password=data['password'])",
             {"password": password},
         )
         client = HTTPChecks(api_port)
+        check_documentation_access(HTTPChecks(api_port), password)
         css = check_proxy_http(client)
         expected_css_hash = shell(
             "from pathlib import Path; from hashlib import sha256; import django.contrib.admin; "
             "print(sha256((Path(django.contrib.admin.__file__).parent / 'static/admin/css/base.css').read_bytes()).hexdigest())"
         ).splitlines()[-1]
         assert sha256(css).hexdigest() == expected_css_hash
-        print("Non-root Nginx, static bytes/MIME types, Swagger, host validation and JWT error headers passed.", flush=True)
-        client.api("GET", "/api/schema/?format=json")
+        print("Non-root Nginx, static bytes/MIME types, admin-session docs/login/logout, host validation and JWT error headers passed.", flush=True)
         client.api("GET", "/api/v1/documents/", expected=401)
         client.api("GET", "/api/v1/documents/", token="invalid-token", expected=401)
         admin = client.api("POST", "/api/v1/auth/token/", data={"username": "integration-admin", "password": password})

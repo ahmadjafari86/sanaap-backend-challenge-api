@@ -13,6 +13,9 @@ Ownership is recorded for attribution, not access restriction.
 
 Application roles are separate from Django staff and superuser flags.
 New users are created by an admin; public registration is unavailable.
+`make superuser` creates the initial Django superuser with application role admin
+in one step. Ordinary user creation retains the viewer role default; existing
+accounts are not promoted automatically.
 
 ## Authentication
 Use Django password authentication with Simple JWT.
@@ -20,6 +23,9 @@ Provide token obtain, refresh, and logout endpoints.
 Logout blacklists the submitted refresh token.
 Existing access tokens remain valid until expiration.
 Production deployment requires HTTPS.
+Swagger and the HTTP OpenAPI schema require an active staff user's valid Django
+admin session. Unauthenticated documentation requests redirect to admin login;
+business endpoints continue to require JWT authentication and application roles.
 
 ## Components
 - accounts: custom user model, roles, authentication, and user management.
@@ -48,6 +54,8 @@ On replacement, upload under a new key before updating the database.
 Delete the previous object only after a successful database commit.
 Attempt cleanup if a new upload cannot be recorded in the database.
 Document remaining failure windows and cleanup limitations in the README.
+Expose document metadata in Django admin for read-only browsing/search/filtering.
+All document mutations use the API services that maintain storage/cache/audit state.
 
 ## Caching
 Cache individual document metadata for 60 seconds.

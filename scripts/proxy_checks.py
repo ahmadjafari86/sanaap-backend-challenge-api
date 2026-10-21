@@ -1,14 +1,46 @@
 """HTTP assertions for the deployed reverse proxy; no Docker or fixture ownership."""
 
 import json
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
+
+
+def check_documentation_access(client, password):
+    paths = ("/api/docs/", "/api/schema/", "/api/schema/?format=json")
+
+    def assert_login_required():
+        for path in paths:
+            body, headers = client.http("GET", client.origin + path, expected=302, return_headers=True)
+            destination = urlsplit(headers["location"])
+            assert destination.path == "/admin/login/"
+            assert parse_qs(destination.query) == {"next": [path]}
+            assert "no-store" in headers.get("cache-control", "") and b"SwaggerUIBundle" not in body
+
+    def csrf():
+        return next(cookie.value for cookie in client.cookies if cookie.name == "csrftoken")
+
+    assert_login_required()
+    client.http("GET", client.origin + "/admin/login/?next=/api/docs/")
+    client.http("POST", client.origin + "/admin/login/?next=/api/docs/", expected=302,
+                body=urlencode({"username": "integration-staff", "password": password,
+                                "csrfmiddlewaretoken": csrf(), "next": "/api/docs/"}).encode(),
+                headers={"Content-Type": "application/x-www-form-urlencoded"})
+    docs, headers = client.http("GET", client.origin + "/api/docs/", return_headers=True)
+    assert headers.get("server") == "nginx" and "no-store" in headers.get("cache-control", "")
+    assert b"SwaggerUIBundle" in docs
+    schema = client.api("GET", "/api/schema/?format=json")
+    assert "/api/v1/documents/" in schema["paths"]
+    # A valid admin session still does not authenticate JWT business endpoints.
+    client.api("GET", "/api/v1/documents/", expected=401)
+    client.http("GET", client.origin + "/admin/documents/document/")
+    client.http("POST", client.origin + "/admin/logout/", expected=302,
+                body=urlencode({"csrfmiddlewaretoken": csrf()}).encode(),
+                headers={"Content-Type": "application/x-www-form-urlencoded"})
+    assert_login_required()
 
 
 def check_proxy_http(client):
-    docs, headers = client.http("GET", client.origin + "/api/docs/", return_headers=True)
+    _, headers = client.http("GET", client.origin + "/healthz", return_headers=True)
     assert headers.get("server") == "nginx", "Public API entrypoint must be Nginx."
-    assert b"SwaggerUIBundle" in docs
-    client.http("GET", client.origin + "/healthz")
     css, headers = client.http("GET", client.origin + "/static/admin/css/base.css", return_headers=True)
     assert "text/css" in headers.get("content-type", "") and b"body" in css
     script, headers = client.http("GET", client.origin + "/static/admin/js/core.js", return_headers=True)

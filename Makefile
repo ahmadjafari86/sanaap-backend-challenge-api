@@ -1,15 +1,19 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help env up down logs ps check shell test integration
+.PHONY: help env up down logs ps check shell superuser test integration
+
+SERVICES ?=
 
 
 help:
 	@echo "make up     - Build and start the project"
 	@echo "make down   - Stop containers and preserve data"
 	@echo "make logs   - Follow container logs"
+	@echo "              Use SERVICES=backend to follow one service; Ctrl+C stops following"
 	@echo "make ps     - Show service status"
 	@echo "make check  - Run Django checks"
 	@echo "make shell  - Open Django shell"
+	@echo "make superuser - Create a Django administrator interactively"
 	@echo "make test   - Run the regression suite"
 	@echo "make integration - Verify a disposable real-service stack"
 
@@ -29,7 +33,7 @@ down:
 	docker compose down
 
 logs:
-	docker compose logs -f --tail=100
+	docker compose logs --follow --tail=100 $(SERVICES)
 
 ps:
 	docker compose ps
@@ -41,6 +45,9 @@ check:
 
 shell:
 	docker compose exec backend python manage.py shell
+
+superuser:
+	docker compose exec backend python manage.py createsuperuser
 
 test:
 	docker compose exec backend python manage.py test --noinput
