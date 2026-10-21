@@ -11,6 +11,7 @@ services:
       MINIO_ENDPOINT_URL: http://minio:9000
       DJANGO_TRUST_PROXY: "True"
       CELERY_BROKER_URL: redis://redis:6379/1
+      CHANNEL_REDIS_URL: redis://redis:6379/2
       DOCUMENT_STAGING_ROOT: /app/.staging
     expose:
       - "8000"

@@ -14,6 +14,7 @@ from urllib3.exceptions import HTTPError
 from .audit import record_document_event
 from .caching import invalidate_document_metadata
 from .models import Document, DocumentAuditEvent
+from .notifications import notify_document
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,8 @@ def transition_document(document, state):
     )
     transaction.on_commit(partial(invalidate_document_metadata, document.pk, previous_version))
     transaction.on_commit(partial(delete_staged_file, staging_key))
+    if state == Document.Status.READY:
+        transaction.on_commit(partial(notify_document, document.pk, "document.ready"))
 
 
 def publish_document(document_id):

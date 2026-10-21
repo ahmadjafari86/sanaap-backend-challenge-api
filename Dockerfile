@@ -27,4 +27,4 @@ USER app
 EXPOSE 8000
 
 ENTRYPOINT ["/app/docker/backend/entrypoint.sh"]
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--access-logfile", "-", "--error-logfile", "-"]
+CMD ["gunicorn", "config.asgi:application", "--worker-class", "config.workers.ApplicationWorker", "--bind", "0.0.0.0:8000", "--workers", "2", "--access-logfile", "-", "--error-logfile", "-"]

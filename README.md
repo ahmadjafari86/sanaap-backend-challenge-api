@@ -1,7 +1,8 @@
 # Sanaap Document Management API
 
 A Django REST Framework API for shared JPEG/PNG documents, using PostgreSQL,
-private MinIO storage, Celery background uploads, Redis metadata caching, and JWT application roles.
+private MinIO storage, Celery background uploads, Redis metadata caching,
+authenticated WebSocket notifications, and JWT application roles.
 
 ## Local setup
 
@@ -42,7 +43,8 @@ make down
 
 `make down` preserves database and object-storage volumes.
 
-Nginx runs as an unprivileged user and forwards requests to Gunicorn on the
+Nginx runs as an unprivileged user and forwards requests to Gunicorn's Uvicorn
+ASGI workers on the
 private Compose network. Gunicorn has no published host port. A shared
 `static_data` volume is writable by the backend's `collectstatic` command and
 read-only in Nginx, which serves `/static/`. Nginx uses the pinned official
@@ -216,8 +218,8 @@ docker compose exec -T backend python manage.py spectacular --validate --fail-on
 The schema is generated from the current implementation. Tests validate its
 request/response separation, binary multipart fields, query bounds, bearer
 security, and error statuses. Audit events are described below. Nginx deployment
-and Celery background storage are included; WebSocket notifications remain tracked in
-[the task queue](docs/tasks.md).
+Celery background storage and authenticated WebSocket notifications are included;
+delivery checkpoints are tracked in [the task queue](docs/tasks.md).
 
 Run the real-service integration checks separately:
 
@@ -239,7 +241,12 @@ forwarded-header spoof resistance, a real 10 MiB transfer, 400/413 boundaries,
 and backend outage/recreation recovery through Nginx. It stops/restarts only the
 disposable worker to prove queued PENDING work reaches READY, verifies broker
 publication failure and exhausted storage retries reach FAILED, and checks all
-terminal staging files are removed. Allow several minutes, including the expiration
+terminal staging files are removed. WebSocket checks use the container's client library with credentials over
+private stdin: all three roles, Origin/refresh/query rejection, Celery READY and
+replacement events through Nginx/Redis, no FAILED/delete events, and Redis
+disconnection/reconnect are exercised. Unit tests use an isolated in-memory
+channel layer so fixture IDs cannot reach running application subscribers.
+Allow several minutes, including the expiration
 wait. The command stops only its disposable services during outage checks,
 then removes its own containers and volumes and verifies that all pre-existing
 volumes remain. If cleanup fails, it reports the private temporary directory
@@ -262,7 +269,10 @@ the normal `make up` command does not publish the service to the internet.
 Before using the example:
 
 1. Replace `api.example.com` in the Nginx example with the actual public DNS
-   name and set `DJANGO_ALLOWED_HOSTS` accordingly in `.env`.
+   name and set `DJANGO_ALLOWED_HOSTS` accordingly in `.env`. Set
+   `WEBSOCKET_ALLOWED_ORIGINS=https://api.example.com` (or the actual browser
+   frontend's HTTPS origin); list explicit comma-separated origins with their
+   ports, without paths or wildcard `*`. Clients connect with `wss://`.
 2. Use deployment-specific Django/database/MinIO credentials. Set
    `MINIO_PUBLIC_ENDPOINT_URL` to a separately reachable **HTTPS** object
    endpoint; the API proxy does not expose private MinIO objects directly.
@@ -516,3 +526,75 @@ list(DocumentAuditEvent.objects.filter(document_id=123).values(
 
 Application code appends events; database administrators can still modify
 them. Cryptographic tamper evidence and automated retention are not implemented.
+
+## WebSocket document notifications
+
+Connect to `ws://127.0.0.1:8000/ws/documents/` locally and `wss://<api-host>/ws/documents/`
+in production. The browser page's Origin must match `WEBSOCKET_ALLOWED_ORIGINS`;
+local defaults allow `http://127.0.0.1:8000` and `http://localhost:8000`.
+Native clients must send an allowed Origin too. Origin checking supplements JWT
+and is not authentication. Tokens never belong in the URL or subprotocol.
+
+Send the first text frame within **5 seconds**:
+
+```json
+{"type":"authenticate","access":"<access JWT>"}
+```
+
+Wait for `{"type":"authenticated"}` before treating the connection as subscribed.
+The handshake accepts before authentication, but no document data or group
+subscription is available before a valid access token and active application
+role. Session cookies and refresh tokens do not authenticate this endpoint.
+All three roles receive the same shared-document hints:
+
+```json
+{"type":"document.ready","document_id":42}
+{"type":"document.updated","document_id":42}
+```
+
+READY hints follow a committed initial upload, including the internal synchronous
+creation service; update hints follow committed title/file updates. PENDING,
+FAILED and deletion do not produce document messages. Events contain only type
+and ID: obtain current metadata from the REST API and request a new download URL
+when needed. Notifications are best effort, with no durable replay, ordering or
+exactly-once guarantee. A concurrent update/delete may already have changed the
+row by the time a hint arrives; refetch and handle 404. Reconcile through the
+list/detail API after reconnect, timeout or Redis outage. Publication waits at
+most two seconds for Redis; failure cannot undo the document or its audit row.
+
+The server rechecks token expiry and the current user's active role before every
+hint and application ping. It closes even idle connections at access-token
+expiry; obtain/refresh an access token over REST, reconnect and authenticate again.
+Logout retains the existing access-token lifetime. Role/deactivation changes take
+effect on the next message check; idle connections still expire on schedule.
+`{"type":"ping"}` returns `{"type":"pong"}` after authentication. Other commands,
+binary frames, invalid JSON and repeated authentication close the connection.
+Frames are limited to **8 KiB** and the server limits the receive queue to 16.
+
+| Close code | Meaning |
+| --- | --- |
+| 4400 | Invalid protocol, repeated authentication or query string (direct ASGI) |
+| 4401 | Missing/invalid/expired access token, inactive/deleted user or auth timeout |
+| 4403 | User no longer has a supported application role |
+| 1009 | Frame exceeds the size limit |
+| 1013 | Temporary identity/channel dependency failure; reconnect with backoff |
+
+Missing/disallowed Origin is denied during handshake with HTTP 403. Nginx rejects
+any query string on this path with HTTP 400 before forwarding to application
+request logs. Transport loss can instead appear as an abnormal closure; the
+close code is not a delivery guarantee. Never log first authentication frames.
+
+Redis DB **2** is the Channels layer, separate from metadata cache DB 0 and Celery
+broker DB 1. Compose sets `CHANNEL_REDIS_URL=redis://redis:6379/2`; native development
+uses the loopback port in `.env.example`. Group queues hold at most 100 messages
+and messages expire after 60 seconds; slow clients may miss hints. Nginx upgrades
+only `/ws/documents/` and has a **75-second upstream idle timeout**. ASGI sends
+protocol pings every 20 seconds with a 20-second response timeout. Custom proxies
+must support HTTP/1.1 upgrade and an idle timeout above that interval. Changing
+these deployment limits requires restarting the backend/proxy.
+
+References: [Channels authentication](https://channels.readthedocs.io/en/stable/topics/authentication.html),
+[Origin protection](https://channels.readthedocs.io/en/stable/topics/security.html),
+[channel-layer delivery](https://channels.readthedocs.io/en/stable/channel_layer_spec.html),
+[Gunicorn ASGI worker](https://github.com/Kludex/uvicorn-worker),
+and [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html).

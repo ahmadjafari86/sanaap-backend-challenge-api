@@ -82,6 +82,6 @@
 - [x] Configure Gunicorn as the application server.
 - [x] Add Nginx as the reverse proxy, serve collected static assets, verify upload/proxy boundaries, and document HTTPS configuration (T11 reviewed by user and merged through PR #5).
 - [x] Celery storage tasks with shared staging, bounded retries,
-      idempotency, and PENDING/READY/FAILED states (T12 verified; awaiting shared user review).
-- [ ] Authenticated Channels notifications after successful commits.
+      idempotency, and PENDING/READY/FAILED states (T12 reviewed by user and merged through PR #6).
+- [x] Authenticated Channels notifications after successful commits (T13 verified with 263 PostgreSQL tests and real Redis/Nginx delivery; shared user review pending).
 - [ ] Test optional features before including them in the release.

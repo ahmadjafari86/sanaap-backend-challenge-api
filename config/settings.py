@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "channels",
     "rest_framework_simplejwt.token_blacklist",
     "django_filters",
     "drf_spectacular",
@@ -90,6 +91,23 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+ASGI_APPLICATION = 'config.asgi.application'
+TEST_RUNNER = 'config.testing.IsolatedChannelTestRunner'
+
+WEBSOCKET_AUTH_TIMEOUT = 5
+WEBSOCKET_ALLOWED_ORIGINS = env.list("WEBSOCKET_ALLOWED_ORIGINS", default=["http://127.0.0.1:8000", "http://localhost:8000"])
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            # Receive blocks in Redis for five seconds; a shorter socket read
+            # timeout would disconnect healthy idle subscribers. Writes/group
+            # operations have separate two-second application deadlines.
+            "hosts": [{"address": env("CHANNEL_REDIS_URL", default="redis://127.0.0.1:6379/2"), "socket_connect_timeout": 1, "socket_timeout": 6}],
+            "expiry": 60, "group_expiry": 3600, "capacity": 100,
+        },
+    },
+}
 
 
 REST_FRAMEWORK = {
