@@ -134,6 +134,18 @@ DATABASES = {
 }
 
 DOCUMENT_METADATA_CACHE_TTL_SECONDS = 60
+DOCUMENT_STAGING_ROOT = env("DOCUMENT_STAGING_ROOT", default=str(BASE_DIR / ".staging"))
+
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://127.0.0.1:6379/1")
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_TASK_DEFAULT_QUEUE = "documents"
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_CONNECTION_TIMEOUT = 2
+CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 60, "socket_timeout": 2, "socket_connect_timeout": 2}
+CELERY_TASK_PUBLISH_RETRY = False
 
 CACHES = {
     "default": {
@@ -158,7 +170,7 @@ MINIO_URL_CACHING_ENABLED = False
 
 STORAGES = {
     "default": {
-        "BACKEND": "django_minio_backend.models.MinioBackend",
+        "BACKEND": "apps.documents.storage.DocumentStorage",
         "OPTIONS": {
             "MINIO_ENDPOINT": minio_endpoint.netloc,
             "MINIO_USE_HTTPS": minio_endpoint.scheme == "https",
@@ -177,6 +189,7 @@ STORAGES = {
             ),
             "MINIO_CONSISTENCY_CHECK_ON_START": False,
             "MINIO_BUCKET_CHECK_ON_SAVE": False,
+            "replace_existing": True,
         },
     },
     "staticfiles": {

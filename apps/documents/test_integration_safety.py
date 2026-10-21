@@ -14,10 +14,13 @@ class IntegrationIsolationTests(SimpleTestCase):
                 "postgres_data": {"name": f"{self.project}_postgres_data"},
                 "minio_data": {"name": f"{self.project}_minio_data"},
                 "static_data": {"name": f"{self.project}_static_data"},
+                "staging_data": {"name": f"{self.project}_staging_data"},
+                "redis_data": {"name": f"{self.project}_redis_data"},
             },
             "networks": {"default": {"name": f"{self.project}_default"}},
             "services": {
-                "backend": {"volumes": [{"type": "volume", "source": "static_data", "target": "/app/staticfiles"}]},
+                "backend": {"volumes": [{"type": "volume", "source": "static_data", "target": "/app/staticfiles"}, {"type": "volume", "source": "staging_data", "target": "/app/.staging"}]},
+                "worker": {"volumes": [{"type": "volume", "source": "staging_data", "target": "/app/.staging"}]},
                 "nginx": {
                     "ports": [{"host_ip": "127.0.0.1", "target": 8080, "published": "28000"}],
                     "volumes": [{"type": "volume", "source": "static_data", "target": "/srv/static", "read_only": True}],
@@ -66,4 +69,12 @@ class IntegrationIsolationTests(SimpleTestCase):
         network["networks"]["default"]["name"] = "existing_default"
         self.assertFalse(is_isolated_config(network, self.project))
         self.config["services"]["backend"]["container_name"] = "existing-backend"
+        self.assertFalse(is_isolated_config(self.config, self.project))
+
+    def test_rejects_worker_without_shared_staging(self):
+        self.config["services"]["worker"]["volumes"] = []
+        self.assertFalse(is_isolated_config(self.config, self.project))
+
+    def test_rejects_publishing_worker_ports(self):
+        self.config["services"]["worker"]["ports"] = [{"host_ip": "127.0.0.1", "target": 8000}]
         self.assertFalse(is_isolated_config(self.config, self.project))

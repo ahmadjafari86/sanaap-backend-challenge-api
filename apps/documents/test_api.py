@@ -1,4 +1,8 @@
 from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from django.test import override_settings
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -18,6 +22,13 @@ User = get_user_model()
 
 class DocumentUploadAPITests(APITestCase):
     url = "/api/v1/documents/"
+
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        setting = override_settings(DOCUMENT_STAGING_ROOT=self.directory.name)
+        setting.enable()
+        self.addCleanup(setting.disable)
 
     def make_payload(self, image_format="PNG"):
         buffer = BytesIO()
@@ -63,7 +74,7 @@ class DocumentUploadAPITests(APITestCase):
 
                 self.assertEqual(
                     response.status_code,
-                    status.HTTP_201_CREATED,
+                    status.HTTP_202_ACCEPTED,
                     response.content,
                 )
 
@@ -73,7 +84,7 @@ class DocumentUploadAPITests(APITestCase):
                 self.assertEqual(response.data["creator"], user.pk)
 
         self.assertEqual(Document.objects.count(), 2)
-        self.assertEqual(storage.save.call_count, 2)
+        storage.save.assert_not_called()
 
     @patch("apps.documents.services.default_storage")
     def test_viewer_cannot_upload(self, storage):
@@ -116,7 +127,7 @@ class DocumentUploadAPITests(APITestCase):
             format="multipart",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(response.data["content_type"], "image/jpeg")
         self.assertEqual(response.data["original_filename"], "sample.jpeg")
         self.assertGreater(response.data["file_size"], 0)
@@ -136,7 +147,7 @@ class DocumentUploadAPITests(APITestCase):
 
         response = self.client.post(self.url, payload, format="multipart")
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         document = Document.objects.get(pk=response.data["id"])
         self.assertEqual(document.content_type, "image/png")
         self.assertEqual(document.original_filename, "misleading.jpeg")
@@ -210,7 +221,7 @@ class DocumentUploadAPITests(APITestCase):
         max_size = 10 * 1024 * 1024
 
         for size, expected_status in (
-            (max_size, status.HTTP_201_CREATED),
+            (max_size, status.HTTP_202_ACCEPTED),
             (max_size + 1, status.HTTP_400_BAD_REQUEST),
         ):
             with self.subTest(size=size):
@@ -225,13 +236,13 @@ class DocumentUploadAPITests(APITestCase):
                     format="multipart",
                 )
                 self.assertEqual(response.status_code, expected_status)
-                if expected_status == status.HTTP_201_CREATED:
+                if expected_status == status.HTTP_202_ACCEPTED:
                     self.assertEqual(response.data["file_size"], max_size)
                 else:
                     self.assertIn("file", response.data)
 
         self.assertEqual(Document.objects.count(), 1)
-        storage.save.assert_called_once()
+        storage.save.assert_not_called()
 
     @patch("apps.documents.services.default_storage")
     def test_client_metadata_cannot_override_server_values(self, storage):
@@ -250,7 +261,7 @@ class DocumentUploadAPITests(APITestCase):
 
         response = self.client.post(self.url, payload, format="multipart")
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         document = Document.objects.get(pk=response.data["id"])
         self.assertEqual(document.creator_id, editor.pk)
         self.assertEqual(response.data["creator"], editor.pk)
@@ -282,9 +293,9 @@ class DocumentUploadAPITests(APITestCase):
 
         response = self.client.post(self.url, self.make_payload(), format="multipart")
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(response.data["creator"], editor.pk)
-        storage.save.assert_called_once()
+        storage.save.assert_not_called()
 
     @patch("apps.documents.services.default_storage")
     def test_invalid_jwt_is_rejected_before_storage(self, storage):
@@ -296,8 +307,9 @@ class DocumentUploadAPITests(APITestCase):
         self.assertFalse(Document.objects.exists())
         storage.save.assert_not_called()
 
-    @patch("apps.documents.services.default_storage")
-    def test_storage_outages_return_safe_service_unavailable_response(self, storage):
+    @patch("apps.documents.background.staging_storage")
+    def test_staging_outages_return_safe_service_unavailable_response(self, staging_factory):
+        storage = staging_factory.return_value
         self.authenticate_editor()
         private_message = "private-storage-connection-details"
 
@@ -348,4 +360,5 @@ class DocumentUploadAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         self.assertNotIn("private-database-details", response.content.decode())
         self.assertFalse(Document.objects.exists())
-        storage.delete.assert_called_once_with("documents/failed-creation.png")
+        storage.delete.assert_not_called()
+        self.assertEqual(list(Path(self.directory.name).iterdir()), [])

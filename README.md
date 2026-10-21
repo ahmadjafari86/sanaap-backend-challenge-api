@@ -1,7 +1,7 @@
 # Sanaap Document Management API
 
 A Django REST Framework API for shared JPEG/PNG documents, using PostgreSQL,
-private MinIO storage, Redis metadata caching, and JWT application roles.
+private MinIO storage, Celery background uploads, Redis metadata caching, and JWT application roles.
 
 ## Local setup
 
@@ -130,7 +130,7 @@ all three roles share access to all documents.
 | POST | `users/` | admin | 201, user metadata |
 | PATCH | `users/<id>/` | admin | 200, user metadata |
 | GET | `documents/` | admin, editor, viewer | 200, paginated metadata |
-| POST | `documents/` | admin, editor | 201, document metadata |
+| POST | `documents/` | admin, editor | 202, PENDING document metadata |
 | GET | `documents/<id>/` | admin, editor, viewer | 200, document metadata |
 | PUT/PATCH | `documents/<id>/` | admin, editor | 200, document metadata |
 | DELETE | `documents/<id>/` | admin | 204, no body |
@@ -143,7 +143,7 @@ and hashing apply. User detail supports PATCH/OPTIONS; it has no GET route.
 
 Document list/detail also support HEAD and OPTIONS. The download endpoint supports
 GET/OPTIONS only. Metadata responses contain `id`, `title`, `original_filename`,
-`content_type`, `file_size`, `creator`, `created_at`, and `updated_at`; internal
+`content_type`, `file_size`, `status`, `creator`, `created_at`, and `updated_at`; internal
 storage keys and version identifiers are omitted. Times are UTC ISO 8601 values.
 
 ## Uploading and updating images
@@ -164,10 +164,22 @@ curl --request POST 'http://127.0.0.1:8000/api/v1/documents/' \
   --form 'file=@/absolute/path/photo.png'
 ```
 
+Creation returns **202 Accepted** with `status: PENDING`. Poll the returned id's
+detail endpoint until `status` becomes `READY` or `FAILED`. A Celery worker reads
+validated bytes from a private shared staging volume and uploads them to MinIO.
+Backend startup initializes the configured MinIO storage instance with
+`initialize_document_storage`; this supports the timeout-configured backend
+subclass, which the library's name-filtered `initialize_buckets` command skips.
+Existing documents migrate as READY. Pending/failed metadata remains visible to
+all three authenticated roles; only READY documents can be downloaded or updated
+(otherwise 409). Admins can delete documents in any state. Client-supplied status,
+staging identifiers and attempt counts cannot override server state.
+
 PATCH accepts a title and/or file; an empty update returns 400. PUT requires a
 title and optionally replaces the image. Send JSON or URL-encoded form data for
 title-only changes, and multipart form data for an image replacement. Original
-creator and creation time remain unchanged.
+creator and creation time remain unchanged. These updates remain synchronous and
+return 200 for READY documents.
 
 ```bash
 curl --request PATCH 'http://127.0.0.1:8000/api/v1/documents/1/' \
@@ -181,13 +193,17 @@ curl --request PATCH 'http://127.0.0.1:8000/api/v1/documents/1/' \
 Invalid input returns 400, usually with field names mapped to message lists;
 parsing errors use a `detail` string. Missing/invalid/expired credentials and
 inactive JWT users return 401. A disallowed or unknown application role returns
-403. Missing documents/users and out-of-range valid pages return 404.
+403. Missing documents/users and out-of-range valid pages return 404. Download or
+update of a PENDING/FAILED document returns 409.
 
 Known creation/update/deletion service errors and download signing/lookup errors
 return a generic 503. Storage cleanup after an already committed update or
 deletion is best effort and does not change its success status. Initial database
 outages on list/detail/user queries can still produce a standard server error;
-Redis fallback does not make PostgreSQL optional.
+Redis fallback does not make PostgreSQL optional. A staging/database failure
+before acceptance returns 503 without a new document. Once accepted, broker
+publication or exhausted worker storage failures produce a FAILED document;
+the original acceptance remains 202 rather than a completed-upload guarantee.
 
 Run the regression, migration, and OpenAPI checks:
 
@@ -200,7 +216,7 @@ docker compose exec -T backend python manage.py spectacular --validate --fail-on
 The schema is generated from the current implementation. Tests validate its
 request/response separation, binary multipart fields, query bounds, bearer
 security, and error statuses. Audit events are described below. Nginx deployment
-is included; Celery and WebSocket notifications remain tracked in
+and Celery background storage are included; WebSocket notifications remain tracked in
 [the task queue](docs/tasks.md).
 
 Run the real-service integration checks separately:
@@ -220,7 +236,10 @@ actual 60-second URL expiration, replacement/deletion cleanup, and recovery
 from Redis and MinIO outages, plus durable audit records for every tested
 operation. It also checks static file bytes/MIME types, public pagination links,
 forwarded-header spoof resistance, a real 10 MiB transfer, 400/413 boundaries,
-and backend outage/recreation recovery through Nginx. Allow several minutes, including the expiration
+and backend outage/recreation recovery through Nginx. It stops/restarts only the
+disposable worker to prove queued PENDING work reaches READY, verifies broker
+publication failure and exhausted storage retries reach FAILED, and checks all
+terminal staging files are removed. Allow several minutes, including the expiration
 wait. The command stops only its disposable services during outage checks,
 then removes its own containers and volumes and verifies that all pre-existing
 volumes remain. If cleanup fails, it reports the private temporary directory
@@ -370,13 +389,20 @@ locks and rereads the document row so concurrent replacements use its current
 storage key. The previous object is deleted only after the database transaction
 commits. Metadata-only updates retain the image and original creator.
 
-Initial creation uploads the object before inserting its metadata. Database
-failure attempts to delete the acknowledged upload. A storage write that raises
-before returning its key triggers best-effort cleanup of the attempted UUID key,
-while preserving the original storage error.
+HTTP creation stages validated bytes privately before inserting PENDING metadata
+and its acceptance audit in one transaction. A database/staging failure attempts
+staging cleanup. Dispatch runs only after commit. The worker locks the row for
+one bounded storage attempt, uses the document's stable UUID object key, and
+atomically commits READY plus its storage audit. Failed acknowledgement/database
+recording triggers attempted-object cleanup. After rollback, compensation reacquires
+the row lock and rechecks current ownership so it cannot delete a duplicate worker's
+committed READY object. If database ownership cannot be verified, cleanup is deferred
+and a possible orphan is retained. Repeated delivery of terminal or
+deleted rows cannot upload again or duplicate storage events. Concurrent workers,
+updates and deletion serialize on that row; writers may wait for storage I/O.
 
 Document deletion also locks and rereads the current row, removes its metadata
-inside the transaction, and deletes its current storage object after commit.
+inside the transaction, and deletes its current storage object and any staged file after commit.
 If the storage object is already missing, metadata deletion can still succeed.
 If post-commit storage cleanup fails, the API still returns HTTP 204 because
 the database deletion has committed; the private orphan is logged for cleanup.
@@ -397,10 +423,53 @@ leave the new upload unreferenced, because Django has no rollback callback for
 this cleanup. The API currently uses the service transaction rather than an
 outer request transaction.
 
+## Background worker and recovery
+
+`make up` starts the worker alongside the API. Backend and worker share only the
+private `staging_data` volume (files mode 0600, owner UID 10001); Nginx cannot
+read it. The worker uses the backend image and waits for backend startup/migrations,
+without running migrations or collectstatic itself. Redis DB 0 is metadata cache;
+DB 1 is the JSON-only Celery broker. Redis uses AOF in `redis_data`; no Celery
+result backend is used, because the document row is the authoritative state.
+Native runs can set `CELERY_BROKER_URL` and `DOCUMENT_STAGING_ROOT`.
+
+Transient storage errors receive at most **four persisted attempts** with bounded
+retry delays. Missing staged files and unexpected storage errors fail immediately.
+Terminal outcomes clean staging after commit and rotate the metadata cache version.
+Celery acknowledges after processing and requeues on worker-process loss. Uploads
+use bounded connect/read timeouts; broker publication does not retry indefinitely.
+Database-unavailable task retries are bounded separately; if a terminal state
+cannot be recorded, the row may remain PENDING for operator recovery.
+
+Publishing after commit is not a transactional outbox: a crash in the commit-to-
+publish gap, broker data loss, or an interrupted retry publication may leave a
+PENDING row. After restoring Redis/worker/database availability, republish these
+rows explicitly (duplicate messages are safe):
+
+```bash
+docker compose exec backend python manage.py requeue_pending_documents
+docker compose logs --tail=100 worker
+```
+
+The command touches only PENDING rows. FAILED rows stay terminal: delete/re-upload
+after correcting the cause. If publication fails, the accepted row is marked
+FAILED with a redacted storage-failure audit, and staging cleanup is attempted.
+The response object can still say PENDING while a following detail read already
+reports FAILED or READY. A process crash/outer rollback between staging and commit,
+or failure/crash before cleanup, can leave private staged or object orphans;
+automatic reconciliation and exactly-once transport are not provided. Disk use
+must be monitored when workers are stopped. A killed attempt can be redelivered
+without its uncommitted attempt counter; the four-attempt limit bounds recorded
+failures, not repeated forced process termination.
+
+Celery behavior references: [Django transaction dispatch](https://docs.celeryq.dev/en/stable/django/first-steps-with-django.html#trigger-tasks-at-the-end-of-the-database-transaction),
+[idempotence and late acknowledgements](https://docs.celeryq.dev/en/stable/userguide/tasks.html),
+and [Redis visibility timeout](https://docs.celeryq.dev/en/stable/getting-started/backends-and-brokers/redis.html#visibility-timeout).
+
 ## Document audit events
 
 `DocumentAuditEvent` stores the actor id, action (`create`, `update`, `delete`,
-or `download_url`), document id, UTC `occurred_at`, `success`/`failure` outcome,
+`download_url`, or `store`), document id, UTC `occurred_at`, `success`/`failure` outcome,
 and HTTP status code. Events begin with this feature's deployment; historical
 operations are not reconstructed. IDs are snapshots without foreign keys,
 so deleting a document or user retains its audit history.
@@ -411,6 +480,13 @@ existing safe 503 response and rolls back the mutation; new uploads use the
 existing best-effort compensation. A deletion whose metadata committed but
 whose object cleanup failed still records a successful deletion with status
 204. Cleanup failures remain in the redacted operator logs.
+
+For background creation, `create/success/202` records acceptance. The worker's
+`store/success/200` records READY, or `store/failure/503` records FAILED, with the
+original creator as actor. These storage-event status codes describe the outcome
+and are not a second HTTP response. The terminal state and event share a transaction;
+retries/duplicate messages add no duplicate terminal event. API 409 denials record
+their existing operation failure event.
 
 Failed API attempts record authentication, permission, validation, missing-id,
 and service failures. Anonymous or invalid-token attempts have a null actor;

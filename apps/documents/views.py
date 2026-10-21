@@ -13,10 +13,12 @@ from urllib3.exceptions import HTTPError
 
 from .audit import DocumentAuditMixin
 from .caching import get_document_metadata
+from .background import stage_document
 from .exceptions import (
     DocumentCreationUnavailable,
     DocumentDeletionUnavailable,
     DocumentDownloadUnavailable,
+    DocumentNotReady,
     DocumentUpdateUnavailable,
 )
 from .models import Document, DocumentAuditEvent
@@ -31,7 +33,6 @@ from .serializers import (
     DocumentUploadSerializer,
 )
 from .services import (
-    create_document,
     delete_document,
     get_document_download_url,
     update_document,
@@ -72,7 +73,7 @@ class DocumentListCreateView(DocumentAuditMixin, generics.ListCreateAPIView):
         serializer.is_valid(raise_exception=True)
 
         try:
-            document = create_document(
+            document = stage_document(
                 title=serializer.validated_data["title"],
                 uploaded_file=serializer.validated_data["file"],
                 creator=request.user,
@@ -83,7 +84,7 @@ class DocumentListCreateView(DocumentAuditMixin, generics.ListCreateAPIView):
 
         return Response(
             DocumentSerializer(document, context=self.get_serializer_context()).data,
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_202_ACCEPTED,
         )
 
 
@@ -120,6 +121,8 @@ class DocumentDetailView(DocumentAuditMixin, generics.RetrieveUpdateDestroyAPIVi
 
     def update(self, request, *args, **kwargs):
         document = self.get_object()
+        if document.status != Document.Status.READY:
+            raise DocumentNotReady()
         serializer = self.get_serializer(
             data=request.data,
             partial=kwargs.pop("partial", False),

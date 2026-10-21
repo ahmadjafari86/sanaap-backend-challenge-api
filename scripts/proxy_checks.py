@@ -33,7 +33,8 @@ def check_forwarded_links(client, token):
 def check_upload_limits(client, *, image, editor, admin):
     exact = image + b"\0" * (10 * 1024 * 1024 - len(image))
     document = client.api("POST", "/api/v1/documents/", token=editor,
-                          data={"title": "Boundary image"}, image=exact, expected=201)
+                          data={"title": "Boundary image"}, image=exact, expected=202)
+    document = client.wait_document(document, editor)
     assert document["file_size"] == 10 * 1024 * 1024
     signed = client.api("GET", f"/api/v1/documents/{document['id']}/download/", token=editor)
     assert client.http("GET", signed["download_url"]) == exact

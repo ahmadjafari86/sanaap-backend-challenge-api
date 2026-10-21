@@ -18,8 +18,9 @@ RUN groupadd --gid 10001 app \
 
 COPY --chown=app:app . .
 RUN chmod +x /app/docker/backend/entrypoint.sh \
-    && mkdir -p /app/staticfiles \
-    && chown app:app /app/staticfiles
+    && mkdir -p /app/staticfiles /app/.staging \
+    && chown app:app /app/staticfiles /app/.staging \
+    && chmod 700 /app/.staging
 
 USER app
 

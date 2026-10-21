@@ -28,14 +28,28 @@
 | T08 | OpenAPI, Swagger, and user documentation | Mandatory | Completed; reviewed by user |
 | T09 | Mandatory integration checks and documents PR | Mandatory | Completed; reviewed by user; merged into develop |
 | T10 | Audit logging | Optional, included in scope | Completed; reviewed by user; merged into develop |
-| T11 | Nginx deployment with Gunicorn | Optional, included in scope | Verified; awaiting shared user review |
-| T12 | Celery background document storage | Optional, included in scope | Pending |
+| T11 | Nginx deployment with Gunicorn | Optional, included in scope | Completed; reviewed by user; merged into develop |
+| T12 | Celery background document storage | Optional, included in scope | Verified; awaiting shared user review |
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Pending |
 | T14 | Final regression checks and Git Flow release | Delivery | Pending |
 
-## Review Checkpoint — T11
+## Review Checkpoint — T12
 
-- Started `feature/nginx-deployment` from updated `develop` (`4962201`) after the user's T10 approval and PR #4 merge. Hold before merging T11 or starting T12 until shared review is approved.
+- Branch `feature/background-storage` starts from `develop` merge `23edcff`. The user approved the existing Celery/PENDING/READY/FAILED design and one-task-at-a-time execution; merge and T13 remain gated on the next shared review.
+- HTTP creation now validates/stages privately and returns 202/PENDING. The worker receives only the document id and atomically records READY or FAILED with a storage audit. Metadata exposes read-only status; downloads and updates require READY (409 otherwise). Admin deletion works in every state; existing rows migrate as READY, while replacements remain synchronous.
+- Added Celery with JSON-only Redis DB 1, late acknowledgement/reject-on-worker-loss, four persisted storage attempts, private shared staging, Redis AOF storage, state-aware cache invalidation and explicit `requeue_pending_documents` recovery. Acceptance audits use create/success/202; terminal storage audits use store/success/200 or store/failure/503 with the original creator as actor.
+- Focused test-first cycles cover acceptance, commit timing, broker failure, retries/exhaustion, staging cleanup, duplicate delivery, audit rollback, cache transitions, 409 gates and two actual PostgreSQL worker/deletion races. Updated schema, API regressions, isolation guards, real-service integration and README for the changed public contract.
+- One independent whole-feature review found one Important rollback-compensation race and no Critical/Minor findings. A deterministic regression reproduced a READY row whose object an older worker deleted. Compensation now reacquires the row lock and rechecks ownership; authoritative READY objects survive, and database uncertainty defers cleanup. The regression and final full PostgreSQL/integration verification pass. No second reviewer or unresolved T12 finding remains.
+- Earlier clean-stack runs passed 231 PostgreSQL tests, including both concurrency races, but exposed two deployment issues: a missing integration-only worker environment value, then the upstream bucket initializer silently ignoring our storage subclass. Both are fixed. Startup now calls `initialize_document_storage` against the actual configured backend; fresh-bucket initialization has a dedicated regression. Every failed disposable stack was removed, preserving existing volumes.
+- Final clean-stack integration passed **235 PostgreSQL tests**, fresh startup/migrations, warning-free OpenAPI validation, PENDING/202 and all-role 409 gates, queued worker stop/restart recovery to READY, broker failure and exhausted storage retries to FAILED, Redis cache fallback/recovery, exact 10 MiB byte transfer and 400/413 boundaries, signed-URL expiry, replacement/deletion cleanup, and backend outage/recreation recovery. All **37 durable audit events** match authenticated actors and outcomes; terminal/deleted documents leave no staged files. Disposable resources were removed and every pre-existing volume preserved.
+- Updated the main stack with migration 0004 and repeated all **235 PostgreSQL tests without skips** in 21.038 seconds. Migration drift, warning-free schema validation and `nginx -t` checks pass; all six services are healthy. Native tests also pass (six expected PostgreSQL-only skips). Implementation and verification are ready for a dedicated draft PR into `develop`; shared user review remains pending before merge/T13.
+- Documented boundaries remain: commit-to-publication/broker-loss recovery is manual; there is no transactional outbox, exactly-once transport, automatic orphan reconciliation or disk quota. Forced process death can replay an uncommitted attempt; database-unavailable retries may leave PENDING. The live restart check exercises queued work across a stop/restart, without claiming a forced mid-upload kill test. These limits are distinct from the fixed cross-worker deletion defect.
+
+## Completed Review — T11
+
+- The user approved T11. PR #5 was marked ready and merged into `develop` (`23edcff`) after all 204 PostgreSQL tests passed again. GitHub reported a clean merge with no checks or review objections. T12 starts on `feature/background-storage` from that merge.
+
+- Started `feature/nginx-deployment` from updated `develop` (`4962201`) after the user's T10 approval and PR #4 merge. The user subsequently approved the shared review and merge before T12.
 - Added a digest-pinned, non-root Nginx container as the loopback port 8000 entrypoint. Gunicorn remains internal. Backend startup collects public static assets into a project-owned volume mounted read-only in Nginx; private images remain in MinIO.
 - Preserved original Host/port, JWT/error headers and upstream responses; overwrite forwarded scheme/client headers, disable API caching/retries, and resolve the backend through Docker DNS. Trusted-proxy behavior is opt-in outside Compose. An 11 MiB total-body limit allows the existing 10 MiB image limit plus multipart overhead.
 - Added seven regressions: two disposable-stack isolation guards and five subprocess tests of actual Django settings/middleware, including trusted HTTPS, redirects, and secure session/CSRF cookies. The initial focused run reproduced five missing-behavior failures before implementation; all 13 focused tests now pass.
@@ -45,7 +59,7 @@
 - Added operator-applied production Compose/TLS examples and HTTPS deployment instructions. A disposable self-signed certificate validated TLS syntax and certificate readability as the non-root Nginx user; Compose merge checks confirmed secure settings, public 80/443 ports, an internal backend and read-only mounts. No public deployment or certificate issuance/renewal was performed.
 - One independent whole-feature review found no Critical or Important issues and independently passed all 13 focused tests. Two **Minor test-coverage improvements** are deferred: force/assert a changed backend IP during recreation (Docker may reuse it), and explicitly assert download `Cache-Control: private, no-store` through the live proxy. Current DNS configuration supports address changes and existing Django tests cover the no-store response; the deployed tests do not prove those two stronger assertions.
 - Production certificate lifecycle, external TLS terminator trust, WebSocket upgrades, asynchronous storage and final release remain separate responsibilities/tasks. Proxy health checks Nginx itself; backend health is separate. Normal Nginx error logs remain diagnostic, while the access-log format excludes query strings/headers/bodies.
-- Verified implementation checkpoint `dbd67c6` is pushed in draft [PR #5](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/5) into `develop`; the shared-review gate remains pending.
+- Verified implementation checkpoint `dbd67c6` and documentation checkpoint `872808a` were reviewed and merged through [PR #5](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/5).
 
 ## Completed Review — T10
 
@@ -359,7 +373,7 @@
 - [x] Implement proxy/static/header/settings changes and pass the focused regressions.
 - [x] Run full PostgreSQL, migration/schema checks and the real disposable integration through Nginx, including large uploads, static bytes, backend outage/recreation and audit persistence.
 - [x] Obtain one independent whole-T11 review and resolve Important/Critical findings in one test-backed pass. No blocking findings; two Minor coverage suggestions are recorded above.
-- [x] Commit/push a verified draft PR into `develop`; hold before merge/T12 for shared user review. PR #5 is open in draft; shared user review is pending.
+- [x] Commit/push a verified draft PR into `develop`; hold before merge/T12 for shared user review. PR #5 was approved and merged.
 
 ### Task 12: T12 — Background storage
 
@@ -368,6 +382,16 @@
 - Dispatch work after database commit; use bounded transient retries, idempotent tasks, and staged-file cleanup.
 - Only READY documents can be downloaded. Handle worker restart, exhausted retries, and dispatch/storage failures.
 - Update schema, deployment, audit integration, and tests; complete a dedicated feature PR/review.
+- Apply the approved asynchronous contract to HTTP creation only: return 202/PENDING, expose read-only `status`, and retain synchronous READY-only updates/replacements. Existing rows migrate as READY. Pending/failed metadata remains readable; downloads and updates of non-READY rows return 409. Admin deletion is allowed in every state.
+- Stage validated bytes under a server-generated name in a private shared volume. Create the PENDING row and acceptance audit (create/success/202) atomically; publish only after commit. A publish failure marks the committed row FAILED with a store/failure/503 event and cleans staging; the accepted response stays 202 and clients poll detail. Validation/staging/database failures before acceptance retain 400/503 with no document.
+- Worker messages contain only the document id. Serialize worker/update/delete with a row lock, use stable private object keys and persistent bounded attempts (four total attempts), and handle redelivery after worker loss idempotently. READY/FAILED/deleted rows cannot be revived or uploaded again. A store/success/200 event shares the READY transition; a store/failure/503 event shares terminal failure. Rotate metadata versions and invalidate after commit on every state transition.
+- Use Celery with a separate Redis broker DB, JSON serialization, late acknowledgement, rejection on worker loss, prefetch 1, no result backend and bounded network operations. Persist Redis broker data with AOF and a project-owned volume. Worker shares only staging, uses the backend image and waits for healthy/migrated backend; it does not run startup migrations/collectstatic itself.
+- Staging cleanup is after terminal commit/deletion and before creation failure returns. Document crash windows (staging outside DB transactions, commit-to-publish gap, broker data loss, cleanup failure) and an explicit operator command to republish PENDING rows after recovery; do not claim an outbox or exactly-once transport.
+- [x] Write/run failing acceptance/status/gating regressions; implement staging and the public 202 contract.
+- [x] Write/run worker retry/redelivery/audit/cache/cleanup and real PostgreSQL race regressions; implement bounded idempotent processing and recovery.
+- [x] Update Compose/dependencies/schema/README and disposable integration for a real worker, worker restart, broker/storage outages and durable audit assertions.
+- [x] Run the full PostgreSQL suite, migration/schema checks and clean real-service integration; obtain one independent whole-feature review and resolve blocking findings. Final 235-test/37-event integration passed; the Important compensation race was fixed with a failing regression first.
+- [ ] Commit/push a verified draft PR into `develop`; hold before merge/T13 for shared user review.
 
 ### Task 13: T13 — WebSocket notifications
 

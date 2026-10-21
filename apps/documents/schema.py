@@ -1,7 +1,7 @@
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view, inline_serializer
 from rest_framework import serializers
 
-from config.schema import AUTH_ERRORS, BAD_REQUEST, NOT_FOUND, UNAVAILABLE
+from config.schema import AUTH_ERRORS, BAD_REQUEST, ERROR_DETAIL, NOT_FOUND, UNAVAILABLE
 
 from .serializers import (
     DocumentDownloadSerializer,
@@ -24,6 +24,7 @@ update_responses = {
     200: DocumentSerializer,
     400: BAD_REQUEST,
     404: NOT_FOUND,
+    409: OpenApiResponse(response=ERROR_DETAIL, description="Document storage is PENDING or FAILED; only READY documents can be updated."),
     503: UNAVAILABLE,
     **AUTH_ERRORS,
 }
@@ -44,15 +45,17 @@ list_schema = extend_schema_view(
     ),
     post=extend_schema(
         tags=["Documents"],
-        summary="Upload a JPEG or PNG document",
+        summary="Accept a JPEG or PNG document for background storage",
         description=(
             "Admins and editors upload multipart title/file data. The file must contain a real "
             "JPEG or PNG image no larger than 10 MiB (10,485,760 bytes). "
             "The authenticated user becomes the creator; storage keys and file metadata are server-owned. "
-            "If recording an upload fails, new-object cleanup is attempted."
+            "Returns 202 with PENDING after private staging and database acceptance. Poll detail for "
+            "READY or FAILED. The Celery worker stores bytes in MinIO; dispatch or exhausted storage "
+            "failures can produce FAILED after acceptance. Existing records are READY."
         ),
         request={"multipart/form-data": DocumentUploadSerializer},
-        responses={201: DocumentSerializer, 400: BAD_REQUEST, 503: UNAVAILABLE, **AUTH_ERRORS},
+        responses={202: DocumentSerializer, 400: BAD_REQUEST, 503: UNAVAILABLE, **AUTH_ERRORS},
     ),
 )
 
@@ -71,7 +74,7 @@ detail_schema = extend_schema_view(
         tags=["Documents"],
         summary="Update a title and optionally replace its image",
         description=(
-            "Admins and editors may update any document. A title is required; the image is optional. "
+            "Admins and editors may update any READY document; other states return 409. A title is required; the image is optional. "
             "Use JSON/form data for title-only updates and multipart for a replacement JPEG/PNG up to 10 MiB. "
             "Original creator/creation time are preserved. Replacement uploads use a new key; "
             "previous-file cleanup runs after commit. Cleanup failure cannot undo a committed update."
@@ -83,7 +86,7 @@ detail_schema = extend_schema_view(
         tags=["Documents"],
         summary="Partially update document metadata or image",
         description=(
-            "Admins and editors may update any document. Provide at least a title or file; empty updates "
+            "Admins and editors may update any READY document; other states return 409. Provide at least a title or file; empty updates "
             "return 400. JSON/form requests update only the title; multipart may also replace the image "
             "with a validated JPEG/PNG up to 10 MiB. Server-owned metadata cannot be overridden. "
             "Replacement and cache cleanup run after database commit."
@@ -110,10 +113,10 @@ download_schema = extend_schema(
     summary="Issue a private download URL valid for 60 seconds",
     description=(
         "All three authenticated roles may request a URL for any document. Permissions and a database "
-        "lookup precede signing. URLs use the external MinIO endpoint and act as bearer credentials "
+        "lookup precede signing. PENDING/FAILED documents return 409 without signing. URLs use the external MinIO endpoint and act as bearer credentials "
         "until expiry or object removal. Logout/role changes do not revoke issued URLs. "
         "URLs and HTTP responses are never cached. Only GET and OPTIONS are supported; HEAD returns 405. "
         "Local signing does not verify object existence, storage availability, or a completed transfer."
     ),
-    responses={200: DocumentDownloadSerializer, 404: NOT_FOUND, 503: UNAVAILABLE, **AUTH_ERRORS},
+    responses={200: DocumentDownloadSerializer, 404: NOT_FOUND, 409: OpenApiResponse(response=ERROR_DETAIL, description="Document storage is not READY."), 503: UNAVAILABLE, **AUTH_ERRORS},
 )

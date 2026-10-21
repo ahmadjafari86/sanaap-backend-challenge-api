@@ -79,7 +79,7 @@ class DocumentMetadataCacheTests(MetadataCacheFixture, APITestCase):
             cold = self.client.get(self.url)
         self.assertEqual(cold.status_code, status.HTTP_200_OK)
         self.assertEqual(set(cold.data), {
-            "id", "title", "original_filename", "content_type", "file_size",
+            "id", "title", "original_filename", "content_type", "file_size", "status",
             "creator", "created_at", "updated_at",
         })
         for role, reader in self.readers.items():

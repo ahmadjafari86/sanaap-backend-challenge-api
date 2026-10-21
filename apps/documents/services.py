@@ -7,6 +7,7 @@ from django.db import transaction
 
 from .audit import record_document_event
 from .caching import invalidate_document_metadata
+from .exceptions import DocumentNotReady
 from .models import Document, DocumentAuditEvent
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,8 @@ def update_document(*, document_id, title=None, uploaded_file=None, actor_id=Non
     try:
         with transaction.atomic():
             document = Document.objects.select_for_update().get(pk=document_id)
+            if document.status != Document.Status.READY:
+                raise DocumentNotReady()
             previous_key = document.object_key
             previous_version = document.metadata_version
 
@@ -119,6 +122,7 @@ def delete_document(*, document_id, actor_id=None):
         document = Document.objects.select_for_update().get(pk=document_id)
         object_key = document.object_key
         metadata_version = document.metadata_version
+        staging_key = document.staging_key
         document.delete()
         record_document_event(
             actor_id=actor_id,
@@ -131,9 +135,14 @@ def delete_document(*, document_id, actor_id=None):
             partial(invalidate_document_metadata, document_id, metadata_version),
         )
         transaction.on_commit(partial(_delete_document_object, object_key))
+        if staging_key:
+            from .background import delete_staged_file
+            transaction.on_commit(partial(delete_staged_file, staging_key))
 
 
 def get_document_download_url(*, document, actor_id=None):
+    if document.status != Document.Status.READY:
+        raise DocumentNotReady()
     download_url = default_storage.url(document.object_key)
     record_document_event(
         actor_id=actor_id,

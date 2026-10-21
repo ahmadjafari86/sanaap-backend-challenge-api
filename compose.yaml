@@ -5,15 +5,18 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
-    environment:
+    environment: &application_environment
       DATABASE_URL: postgresql://${POSTGRES_USER:?required}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:?required}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT_URL: http://minio:9000
       DJANGO_TRUST_PROXY: "True"
+      CELERY_BROKER_URL: redis://redis:6379/1
+      DOCUMENT_STAGING_ROOT: /app/.staging
     expose:
       - "8000"
     volumes:
       - static_data:/app/staticfiles
+      - staging_data:/app/.staging
     depends_on:
       postgres:
         condition: service_healthy
@@ -30,6 +33,27 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+      start_period: 30s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment: *application_environment
+    entrypoint: ["celery"]
+    command: ["-A", "config", "worker", "--loglevel=WARNING", "--concurrency=2", "--hostname=celery@%h"]
+    volumes:
+      - staging_data:/app/.staging
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping -d celery@$$HOSTNAME --timeout 3 | grep -q pong"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
       start_period: 30s
 
   nginx:
@@ -68,6 +92,9 @@ services:
 
   redis:
     image: redis:7.4
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
     ports:
       - "127.0.0.1:16379:6379"
     healthcheck:
@@ -107,3 +134,5 @@ volumes:
   postgres_data:
   minio_data:
   static_data:
+  staging_data:
+  redis_data:
