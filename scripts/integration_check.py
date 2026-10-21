@@ -401,7 +401,8 @@ def main():
         deadline = time.monotonic() + 30
         while True:
             try:
-                client.http("GET", client.origin + "/api/docs/")
+                _, headers = client.http("GET", client.origin + "/api/docs/", expected=302, return_headers=True)
+                assert urlsplit(headers["location"]).path == "/admin/login/"
                 break
             except RuntimeError:
                 if time.monotonic() >= deadline:
