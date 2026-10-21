@@ -75,7 +75,7 @@
 - [x] Document setup, application-admin creation, auth/roles, endpoints, examples, file limits, assumptions, and limitations (T08 reviewed by user).
 - [x] Document presigned URL behavior after logout or role changes (T05 reviewed by user).
 - [x] Merge mandatory document work into develop through PR #3 (T09 reviewed by user).
-- [ ] Prepare main for delivery through the final release checkpoint.
+- [ ] Prepare main for delivery through the final release checkpoint (v0.1.0 candidate verified in draft PR #8; shared release review, main merge and tag pending).
 
 ## 6. Optional Features
 - [x] Audit log: actor, action, document identifier, time, and outcome (T10 reviewed by user and merged into develop through PR #4).
@@ -83,5 +83,5 @@
 - [x] Add Nginx as the reverse proxy, serve collected static assets, verify upload/proxy boundaries, and document HTTPS configuration (T11 reviewed by user and merged through PR #5).
 - [x] Celery storage tasks with shared staging, bounded retries,
       idempotency, and PENDING/READY/FAILED states (T12 reviewed by user and merged through PR #6).
-- [x] Authenticated Channels notifications after successful commits (T13 verified with 263 PostgreSQL tests and real Redis/Nginx delivery in draft PR #7; shared user review pending).
+- [x] Authenticated Channels notifications after successful commits (T13 reviewed by user and merged through PR #7; 263 PostgreSQL tests and real Redis/Nginx delivery verified).
 - [x] Test optional features (T10–T13 regression/integration gates passed; the final release checkpoint remains T14).

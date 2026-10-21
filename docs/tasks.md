@@ -30,12 +30,26 @@
 | T10 | Audit logging | Optional, included in scope | Completed; reviewed by user; merged into develop |
 | T11 | Nginx deployment with Gunicorn | Optional, included in scope | Completed; reviewed by user; merged into develop |
 | T12 | Celery background document storage | Optional, included in scope | Completed; reviewed by user; merged into develop |
-| T13 | Authenticated WebSocket notifications | Optional, included in scope | Verified; awaiting shared user review |
-| T14 | Final regression checks and Git Flow release | Delivery | Pending |
+| T13 | Authenticated WebSocket notifications | Optional, included in scope | Completed; reviewed by user; merged into develop |
+| T14 | Final regression checks and Git Flow release | Delivery | v0.1.0 candidate verified; shared release review pending |
 
-## Checkpoint — T13 (shared user review pending)
+## Checkpoint — T14 (v0.1.0; shared release review pending)
 
-- Started `feature/websocket-notifications` from approved T12 merge `cea12d9` on `develop`. Implementation and verification are complete; merge and T14 remain gated on shared user review. Verified implementation `e04f9cc` is pushed in draft [PR #7](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/7) targeting `develop`.
+- The user selected **v0.1.0**. The temporary preparation branch was renamed to `release/0.1.0`, retaining its base at approved T13 merge `fbd4983` and verified packaging checkpoint `b56f02f`. Package and lockfile already match 0.1.0; dependencies/runtime sources remain unchanged. Remote ancestry was checked and no existing v0.1.0 tag was found. Draft [PR #8](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/8) targets `main` for the shared release review.
+- A real image inspection reproduced agent scratch inside the runtime image. `.dockerignore` and `.gitignore` now exclude `.superpowers/`; actual rebuilt-image inspection confirms scratch, Git metadata, runtime env files and staged bytes are absent. Tracked-source archive inspection excludes local runtime/key artifacts too. No application behavior, dependencies or migrations changed.
+- Added [release notes](../CHANGELOG.md) and a [release checklist](release-checklist.md) recording scope, compatibility, exact evidence, known limits and separate publication gates.
+- Final disposable integration passed **263 PostgreSQL tests**, clean startup/migrations, warning-free schema and Nginx checks, every existing JWT/storage/cache/worker/socket/proxy/outage/expiry/recreation check and exactly **37 durable audit events**. Terminal staging was empty; the disposable stack was removed and every pre-existing volume preserved.
+- Production Compose security settings, example ports and read-only mounts were validated; non-root Nginx TLS syntax passed using an ephemeral dummy certificate with no published ports. This is local syntax validation, not real certificate issuance or public deployment.
+- The development stack runs the corrected images; all **six services** are healthy, all **five original volumes** are preserved, active-image scratch/env/Git exclusion passes, and migration/schema/Nginx checks pass again.
+- One independent release-readiness review found **no Critical, Important or Minor issues**. It checked packaging, notes, requirement coverage and Git Flow gates; unchanged feature internals retain their prior T01–T13 reviews. The parent performed the actual runtime checks. No second review or new deferred minor is needed.
+- The version is agreed; shared review of the concrete candidate still precedes the main merge and tag. After the release PR is approved, merge with its expected head, create annotated `v0.1.0` on the main merge, merge main back into develop and verify remote ancestry/tag target. No main merge, tag, public deployment or published GitHub Release is claimed by this candidate checkpoint.
+- Accepted storage/publication/replay limitations and the two prior T11 coverage minors remain explicit in the release checklist; this packaging checkpoint does not claim new recovery, capacity or public TLS guarantees.
+
+## Completed Review — T13
+
+- The user approved T13. [PR #7](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/7) was marked ready and merged into `develop` (`fbd4983`) after repeating all 263 PostgreSQL tests without skips in 29.005 seconds. GitHub reported a clean merge with no checks or review objections. T14 release preparation starts from that merge; main/release tagging retains its own shared review gate.
+
+- Started `feature/websocket-notifications` from approved T12 merge `cea12d9` on `develop`. Verified implementation `e04f9cc` and documentation checkpoint `f8668ab` were reviewed and merged through [PR #7](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/7).
 - Added Channels `/ws/documents/` with explicit Origin admission, a five-second first-frame access-JWT deadline, all three shared-document roles, active-user/current-role checks before every hint/ping, and automatic closure at access expiry. Refresh/session/query authentication, binary/oversized/malformed frames and repeated authentication cannot subscribe. README specifies frames, close codes, reconnect/refetch and production HTTPS/WSS configuration.
 - Worker READY transitions, retained synchronous internal READY creation and successful updates emit only event type and document id after commit. Rollback, FAILED/PENDING and deletion do not emit document events; duplicate worker delivery does not repeat READY. Publication and cleanup are bounded, redact exception details and cannot undo committed metadata/audit outcomes.
 - Added Redis DB 2 separately from cache DB 0 and broker DB 1. Gunicorn now uses the maintained Uvicorn ASGI worker for both HTTP and WebSocket, with 8 KiB messages, a 16-message receive queue and 20-second protocol pings. Nginx upgrades only the exact notification path, rejects queries before application logs and retains controlled HTTP forwarding/static/upload behavior with a 75-second socket idle timeout.
@@ -426,7 +440,7 @@
 - [x] Write/run failing commit/rollback/duplicate/error publication regressions and implement READY/update hooks.
 - [x] Update Gunicorn/ASGI/Nginx/Redis configuration and verify real WebSocket delivery from HTTP and Celery through Nginx, including dependency failure and cleanup.
 - [x] Run full PostgreSQL, migration/schema and disposable integration checks; obtain one independent whole-feature review and resolve blocking findings. Final 263-test/37-event integration passed; both Important review findings and the retained-token expiry check were fixed with RED→GREEN evidence.
-- [x] Commit/push a verified draft PR into `develop`; hold before merge/T14 for shared user review. Draft [PR #7](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/7) is ready for that checkpoint.
+- [x] Commit/push a verified draft PR into `develop`; hold before merge/T14 for shared user review. PR #7 was approved and merged.
 
 ### Task 14: T14 — Release
 
@@ -434,3 +448,11 @@
 - Verify clean startup of the full stack, migrations, docs, and failure handling.
 - Review the release diff and agreed version before the Git Flow release merges and tag.
 - Mark tasks reviewed only when their required implementation, evidence, and user review are complete.
+- Preserve the approved runtime/API behavior and deployment boundaries; release preparation is packaging, evidence and Git Flow delivery, not another feature expansion.
+- Files: `.dockerignore`/`.gitignore` for actual scratch exclusion, `CHANGELOG.md` and `docs/release-checklist.md` for scope/evidence/operator handoff, existing README and implementation/task checklists. Update `pyproject.toml`/`uv.lock` only if the selected release version differs from the current 0.1.0. API schema version `v1` is separate from package/release numbering.
+- [x] Agree the release version; create the versioned `release/<version>` branch from updated `develop`. User selected v0.1.0; `release/0.1.0` retains the verified preparation commit and existing matching package/lockfile metadata.
+- [x] Audit the release diff/archive and exclude local agent scratch from Git and Docker images; verify the built runtime image contains neither scratch nor runtime secrets/staging artifacts.
+- [x] Run the complete PostgreSQL and disposable six-service integration gate, migration/schema/proxy checks, and production-example syntax validation without public deployment. Final 263-test/37-event integration passed; dummy-cert TLS check passed without publishing ports; existing volumes were preserved.
+- [x] Record release notes, exact verification evidence and accepted limitations; obtain one independent release review and fix blocking findings with targeted regression evidence. No Critical/Important/Minor findings.
+- [x] Commit/push the verified release candidate and open a draft PR into `main`; STOP for shared review before merging, tagging or creating a published GitHub Release. Draft [PR #8](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/8) is attached and ready for that checkpoint.
+- [ ] After the release checkpoint is approved, merge into `main`, tag the reviewed main commit, merge it back into `develop`, and verify both branches and the remote tag. Never invent or overwrite an existing release tag.

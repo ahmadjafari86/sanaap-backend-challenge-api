@@ -12,6 +12,7 @@ htmlcov/
 media/
 staticfiles/
 .staging/
+.superpowers/
 .idea/
 .vscode/
 .DS_Store

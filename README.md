@@ -259,6 +259,9 @@ Feature branches start from `develop` and return through pull requests.
 Release branches prepare delivery to `main` and are merged back into
 `develop`. Released versions are tagged.
 
+See [CHANGELOG](CHANGELOG.md) for delivered scope and compatibility notes, and
+the [release checklist](docs/release-checklist.md) for verification and review gates.
+
 ## HTTPS deployment example
 
 The default stack binds HTTP only to loopback. The provided
