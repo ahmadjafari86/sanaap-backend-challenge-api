@@ -30,10 +30,14 @@ ROOT = Path(__file__).resolve().parents[1]
 def is_isolated_config(config, project):
     if not re.fullmatch(r"sanaap-t09-[0-9a-f]{10}", project) or config.get("name") != project:
         return False
-    if set(config.get("services", {})) != {"backend", "nginx", "postgres", "redis", "minio"}:
+    if set(config.get("services", {})) != {"backend", "worker", "nginx", "postgres", "redis", "minio"}:
         return False
-    if config["services"]["backend"].get("ports"):
+    if config["services"]["backend"].get("ports") or config["services"]["worker"].get("ports"):
         return False
+    for service in ("backend", "worker"):
+        if not any(mount.get("source") == "staging_data" and mount.get("target") == "/app/.staging"
+                   and not mount.get("read_only") for mount in config["services"][service].get("volumes", [])):
+            return False
     proxy_mounts = config["services"]["nginx"].get("volumes", [])
     if not any(mount.get("source") == "static_data" and mount.get("target") == "/srv/static"
                and mount.get("read_only") for mount in proxy_mounts):
@@ -108,6 +112,16 @@ class HTTPChecks:
         raw = self.http(method, self.origin + path, body=body, headers=headers, expected=expected)
         return json.loads(raw) if raw else None
 
+    def wait_document(self, document, token, state="READY", timeout=60):
+        deadline = time.monotonic() + timeout
+        while True:
+            current = self.api("GET", f"/api/v1/documents/{document['id']}/", token=token)
+            if current["status"] == state:
+                return current
+            if current["status"] == "FAILED" or time.monotonic() >= deadline:
+                raise RuntimeError(f"Document did not reach expected {state} state (observed {current['status']}).")
+            time.sleep(0.2)
+
 
 def free_port():
     with socket.socket() as listener:
@@ -171,7 +185,11 @@ def main():
         run(base + ["build", "backend", "minio", "nginx"], timeout=600)
         active = True
         print("Starting a clean, isolated stack...", flush=True)
-        run(compose + ["up", "-d", "--no-build", "--wait", "--wait-timeout", "180"])
+        try:
+            run(compose + ["up", "-d", "--no-build", "--wait", "--wait-timeout", "180"])
+        except RuntimeError as error:
+            diagnostic = run(compose + ["logs", "--no-color", "--tail", "50", "worker"])
+            raise RuntimeError(f"{error}\nWorker startup diagnostics:\n{redact(diagnostic)}") from None
         run(compose + ["exec", "-T", "backend", "python", "manage.py", "check"])
         run(compose + ["exec", "-T", "backend", "python", "manage.py", "makemigrations", "--check", "--dry-run"])
         run(compose + ["exec", "-T", "backend", "python", "manage.py", "migrate", "--check"])
@@ -217,8 +235,18 @@ def main():
 
         original, replacement = png_bytes((255, 0, 0)), png_bytes((0, 0, 255))
         editor, viewer = tokens["editor"]["access"], tokens["viewer"]["access"]
-        document = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Integration image"}, image=original, expected=201)
+        print("Stopping only disposable worker to check queued acceptance and restart recovery...", flush=True)
+        run(compose + ["stop", "--timeout", "3", "worker"])
+        document = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Integration image"}, image=original, expected=202)
         detail = f"/api/v1/documents/{document['id']}/"
+        assert document["status"] == "PENDING"
+        for pair in tokens.values():
+            assert client.api("GET", detail, token=pair["access"])["status"] == "PENDING"
+            client.api("GET", detail + "download/", token=pair["access"], expected=409)
+        client.api("PATCH", detail, token=editor, data={"title": "Must remain unchanged"}, expected=409)
+        run(compose + ["up", "-d", "--no-deps", "--wait", "worker"])
+        document = client.wait_document(document, editor)
+        print("PENDING 202/readability/409 gates and queued job recovery after worker restart passed.", flush=True)
         assert document["content_type"] == "image/png" and document["file_size"] == len(original)
         first_url = None
         expiry_deadline = None
@@ -250,11 +278,17 @@ def main():
         assert client.api("GET", detail, token=viewer)["title"] == "Integration image"
         client.api("PATCH", detail, token=editor, data={"title": "Redis outage update"})
         assert client.api("GET", detail, token=viewer)["title"] == "Redis outage update"
+        broker_failed = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Broker outage"}, image=original, expected=202)
+        client.wait_document(broker_failed, editor, state="FAILED")
+        broker_detail = f"/api/v1/documents/{broker_failed['id']}/"
+        client.api("GET", broker_detail + "download/", token=viewer, expected=409)
+        client.api("DELETE", broker_detail, token=admin["access"], expected=204)
         run(compose + ["up", "-d", "--no-deps", "--wait", "redis"])
         assert client.api("GET", detail, token=viewer)["title"] == "Redis outage update"
         print("Redis outage and recovery passed without stale metadata or failed writes.", flush=True)
 
-        second = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Replacement image"}, image=original, expected=201)
+        second = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Replacement image"}, image=original, expected=202)
+        second = client.wait_document(second, editor)
         check_forwarded_links(client, viewer)
         boundary_id = check_upload_limits(client, image=original, editor=editor, admin=admin["access"])
         print("Public Host/port and forwarded-header spoof checks, 10 MiB transfer, API400 and proxy413 passed.", flush=True)
@@ -267,21 +301,25 @@ def main():
         old_key = unquote(urlsplit(old_url).path).split("/", 2)[2]
         shell("from django.core.files.storage import default_storage; "
               f"assert not default_storage.exists({old_key!r}) and default_storage.exists({second_key!r})")
-        orphan = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Cleanup outage"}, image=original, expected=201)
+        orphan = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Cleanup outage"}, image=original, expected=202)
+        orphan = client.wait_document(orphan, editor)
         orphan_detail = f"/api/v1/documents/{orphan['id']}/"
         orphan_url = client.api("GET", orphan_detail + "download/", token=viewer)["download_url"]
         orphan_key = unquote(urlsplit(orphan_url).path).split("/", 2)[2]
 
         print("Stopping only disposable MinIO to verify storage failure handling...", flush=True)
         run(compose + ["stop", "--timeout", "3", "minio"])
-        client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Failed upload"}, image=original, expected=503)
+        failed = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Failed upload"}, image=original, expected=202)
+        client.wait_document(failed, editor, state="FAILED")
         client.api("PATCH", second_detail, token=editor, image=original, expected=503)
         assert client.api("GET", second_detail, token=viewer) == updated
         client.api("DELETE", orphan_detail, token=admin["access"], expected=204)
         client.api("GET", orphan_detail, token=viewer, expected=404)
         run(compose + ["up", "-d", "--no-deps", "--wait", "minio"])
         assert client.http("GET", client.api("GET", second_detail + "download/", token=viewer)["download_url"]) == replacement
-        assert client.api("GET", "/api/v1/documents/?search=Failed%20upload", token=viewer)["count"] == 0
+        failed_page = client.api("GET", "/api/v1/documents/?search=Failed%20upload", token=viewer)
+        assert failed_page["count"] == 1 and failed_page["results"][0]["status"] == "FAILED"
+        client.api("DELETE", f"/api/v1/documents/{failed['id']}/", token=admin["access"], expected=204)
         shell("from django.core.files.storage import default_storage; "
               f"assert default_storage.exists({orphan_key!r})")
         print("Storage outages, rollback, recovery, replacement cleanup and documented orphan behavior passed.", flush=True)
@@ -320,11 +358,10 @@ def main():
                 time.sleep(1)
         print("Backend gateway error and recreation recovery passed without restarting Nginx.", flush=True)
         expected_events = [
-            ["integration-editor", "create", row["id"], "success", 201]
+            ["integration-editor", "create", row["id"], "success", 202]
             for row in (document, second, orphan)
         ] + [
             ["integration-viewer", "create", None, "failure", 403],
-            ["integration-editor", "create", None, "failure", 503],
             ["integration-editor", "update", document["id"], "success", 200],
             ["integration-editor", "update", second["id"], "success", 200],
             ["integration-editor", "update", second["id"], "failure", 503],
@@ -340,10 +377,28 @@ def main():
             for _ in range(3)
         ] + [
             ["integration-viewer", "download_url", orphan["id"], "success", 200],
-            ["integration-editor", "create", boundary_id, "success", 201],
+            ["integration-editor", "create", boundary_id, "success", 202],
             ["integration-editor", "download_url", boundary_id, "success", 200],
             ["integration-editor", "create", None, "failure", 400],
             ["integration-admin", "delete", boundary_id, "success", 204],
+            ["integration-editor", "update", document["id"], "failure", 409],
+        ] + [
+            [f"integration-{role}", "download_url", document["id"], "failure", 409]
+            for role in ("admin", "editor", "viewer")
+        ] + [
+            ["integration-editor", "store", document_id, "success", 200]
+            for document_id in (document["id"], second["id"], orphan["id"], boundary_id)
+        ] + [
+            ["integration-editor", "create", row["id"], "success", 202]
+            for row in (broker_failed, failed)
+        ] + [
+            ["integration-editor", "store", row["id"], "failure", 503]
+            for row in (broker_failed, failed)
+        ] + [
+            ["integration-admin", "delete", row["id"], "success", 204]
+            for row in (broker_failed, failed)
+        ] + [
+            ["integration-viewer", "download_url", broker_failed["id"], "failure", 409],
         ]
         shell(
             "import json, sys; from collections import Counter; from django.contrib.auth import get_user_model; "
@@ -352,10 +407,20 @@ def main():
             "expected = Counter((identities[row[0]], *row[1:]) for row in json.load(sys.stdin)); "
             "actual = Counter(DocumentAuditEvent.objects.values_list('actor_id', 'action', 'document_id', 'outcome', 'status_code')); "
             "assert actual == expected and not Document.objects.exists(); "
-            "assert DocumentAuditEvent.objects.count() == 23",
+            "assert DocumentAuditEvent.objects.count() == 37; "
+            "from pathlib import Path; from django.conf import settings; "
+            "assert not list(Path(settings.DOCUMENT_STAGING_ROOT).iterdir())",
             expected_events,
         )
-        print("All 23 durable audit events match authenticated actors and outcomes, including deleted documents.", flush=True)
+        print("All 37 durable audit events match actors/outcomes; terminal/deleted documents left no staged files.", flush=True)
+    except Exception:
+        if active:
+            try:
+                diagnostic = run(compose + ["logs", "--no-color", "--tail", "50", "worker"])
+                print("Worker failure diagnostics:\n" + redact(diagnostic[-5000:]), file=sys.stderr, flush=True)
+            except Exception:
+                print("Worker failure diagnostics unavailable.", file=sys.stderr, flush=True)
+        raise
     finally:
         if active:
             config = json.loads(run(compose + ["config", "--format", "json"]))

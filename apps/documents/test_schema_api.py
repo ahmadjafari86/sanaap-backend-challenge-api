@@ -9,7 +9,7 @@ class APISchemaTests(APISimpleTestCase):
     schema_url = "/api/schema/"
     docs_url = "/api/docs/"
     metadata_fields = {
-        "id", "title", "original_filename", "content_type", "file_size",
+        "id", "title", "original_filename", "content_type", "file_size", "status",
         "creator", "created_at", "updated_at",
     }
 
@@ -86,7 +86,7 @@ class APISchemaTests(APISimpleTestCase):
         self.assertEqual(set(request["required"]), {"title", "file"})
         self.assertEqual(request["properties"]["file"]["format"], "binary")
         self.assertEqual(request["properties"]["title"]["maxLength"], 255)
-        response = self.response_schema(schema, operation, 201)
+        response = self.response_schema(schema, operation, 202)
         self.assertEqual(set(response["properties"]), self.metadata_fields)
 
     def test_updates_describe_json_titles_and_optional_multipart_images(self):

@@ -5,12 +5,20 @@ from django.db import models
 
 
 class Document(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending storage"
+        READY = "READY", "Ready"
+        FAILED = "FAILED", "Storage failed"
+
     title = models.CharField(max_length=255)
     original_filename = models.CharField(max_length=255)
     object_key = models.CharField(max_length=1024, unique=True)
     content_type = models.CharField(max_length=100)
     file_size = models.PositiveBigIntegerField()
     metadata_version = models.UUIDField(default=uuid4, editable=False)
+    status = models.CharField(max_length=7, choices=Status.choices, default=Status.READY)
+    staging_key = models.CharField(max_length=64, blank=True, editable=False)
+    storage_attempts = models.PositiveSmallIntegerField(default=0, editable=False)
 
     creator = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -31,6 +39,7 @@ class DocumentAuditEvent(models.Model):
         UPDATE = "update", "Update document"
         DELETE = "delete", "Delete document"
         DOWNLOAD_URL = "download_url", "Issue download URL"
+        STORE = "store", "Background document storage"
 
     class Outcome(models.TextChoices):
         SUCCESS = "success", "Success"

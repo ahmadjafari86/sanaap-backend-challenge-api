@@ -80,8 +80,8 @@
 ## 6. Optional Features
 - [x] Audit log: actor, action, document identifier, time, and outcome (T10 reviewed by user and merged into develop through PR #4).
 - [x] Configure Gunicorn as the application server.
-- [x] Add Nginx as the reverse proxy, serve collected static assets, verify upload/proxy boundaries, and document HTTPS configuration (T11 verified; awaiting shared user review).
-- [ ] Celery storage tasks with shared staging, bounded retries,
-      idempotency, and PENDING/READY/FAILED states.
+- [x] Add Nginx as the reverse proxy, serve collected static assets, verify upload/proxy boundaries, and document HTTPS configuration (T11 reviewed by user and merged through PR #5).
+- [x] Celery storage tasks with shared staging, bounded retries,
+      idempotency, and PENDING/READY/FAILED states (T12 verified; awaiting shared user review).
 - [ ] Authenticated Channels notifications after successful commits.
 - [ ] Test optional features before including them in the release.

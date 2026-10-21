@@ -2,6 +2,12 @@ from rest_framework import status
 from rest_framework.exceptions import APIException
 
 
+class DocumentNotReady(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "Document storage is not ready."
+    default_code = "document_not_ready"
+
+
 class DocumentCreationUnavailable(APIException):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     default_detail = "Document creation is temporarily unavailable."

@@ -1,4 +1,11 @@
 services:
+  worker:
+    image: ${INTEGRATION_BACKEND_IMAGE:?required}
+    env_file: !override
+      - ${INTEGRATION_ENV_FILE:?required}
+    environment:
+      MINIO_PUBLIC_ENDPOINT_URL: http://127.0.0.1:${INTEGRATION_MINIO_PORT:?required}
+
   backend:
     image: ${INTEGRATION_BACKEND_IMAGE:?required}
     env_file: !override

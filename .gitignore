@@ -11,6 +11,7 @@ htmlcov/
 *.sqlite3
 media/
 staticfiles/
+.staging/
 .idea/
 .vscode/
 .DS_Store

@@ -64,6 +64,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             "original_filename",
             "content_type",
             "file_size",
+            "status",
             "creator",
             "created_at",
             "updated_at",

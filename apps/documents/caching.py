@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def _metadata_key(document_id, metadata_version):
-    return f"documents:metadata:v1:{document_id}:{metadata_version}"
+    return f"documents:metadata:v2:{document_id}:{metadata_version}"
 
 
 def get_document_metadata(*, document):

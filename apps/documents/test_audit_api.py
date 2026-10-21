@@ -1,5 +1,9 @@
 import json
 from io import BytesIO
+from tempfile import TemporaryDirectory
+from contextlib import nullcontext
+
+from .background import staging_storage
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -40,6 +44,11 @@ class DocumentAuditAPITests(APITestCase):
         cls.download = cls.detail + "download/"
 
     def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        setting = override_settings(DOCUMENT_STAGING_ROOT=self.directory.name)
+        setting.enable()
+        self.addCleanup(setting.disable)
         self.events = DocumentAuditEvent.objects
         self.started_at = timezone.now()
         self.storage = InMemoryStorage()
@@ -70,8 +79,8 @@ class DocumentAuditAPITests(APITestCase):
                 response = self.client.post(
                     self.collection, {"title": "Audit upload", "file": self.upload()}, format="multipart",
                 )
-                self.assertEqual(response.status_code, 201)
-                self.assert_event(actor.pk, "create", response.data["id"], "success", 201)
+                self.assertEqual(response.status_code, 202)
+                self.assert_event(actor.pk, "create", response.data["id"], "success", 202)
 
     def test_put_and_patch_record_the_editor_rather_than_document_creator(self):
         for method in ("put", "patch"):
@@ -90,7 +99,7 @@ class DocumentAuditAPITests(APITestCase):
         created = self.client.post(
             self.collection, {"title": "Delete later", "file": self.upload()}, format="multipart",
         )
-        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.status_code, 202)
         document_id, actor_id = created.data["id"], self.editor.pk
         self.client.force_authenticate(user=self.admin)
         response = self.client.delete(f"{self.collection}{document_id}/")
@@ -98,7 +107,7 @@ class DocumentAuditAPITests(APITestCase):
         self.editor.delete()
         self.assertEqual(
             set(self.events.values_list("actor_id", "action", "document_id", "outcome", "status_code")),
-            {(actor_id, "create", document_id, "success", 201),
+            {(actor_id, "create", document_id, "success", 202),
              (self.admin.pk, "delete", document_id, "success", 204)},
         )
 
@@ -191,8 +200,10 @@ class DocumentAuditAPITests(APITestCase):
         ):
             with self.subTest(action=action):
                 self.events.all().delete()
+                target_storage = staging_storage() if method == "post" else self.storage
                 with (
-                    patch.object(self.storage, storage_method, side_effect=OSError("private-storage-secret")),
+                    patch.object(target_storage, storage_method, side_effect=OSError("private-storage-secret")),
+                    patch("apps.documents.background.staging_storage", return_value=target_storage) if method == "post" else nullcontext(),
                     self.assertLogs("apps.documents.views", level="ERROR"),
                 ):
                     payload = {"title": "Attempt", "file": self.upload()} if method != "get" else {}
@@ -317,7 +328,7 @@ class DocumentAuditAPITests(APITestCase):
     def test_unexpected_service_error_records_failure_before_framework_500(self):
         self.client.raise_request_exception = False
         with (
-            patch.object(self.storage, "save", side_effect=RuntimeError("Unexpected storage failure")),
+            patch("apps.documents.views.stage_document", side_effect=RuntimeError("Unexpected staging failure")),
             self.assertLogs("django.request", level="ERROR"),
         ):
             response = self.client.post(
@@ -335,8 +346,8 @@ class DocumentAuditAPITests(APITestCase):
             "actor_id": self.admin.pk, "document_id": 12345, "outcome": "forged-outcome",
             "download_url": "https://private-url-secret.example.test/", "action": "forged-action",
         }, format="multipart")
-        self.assertEqual(response.status_code, 201)
-        self.assert_event(self.editor.pk, "create", response.data["id"], "success", 201)
+        self.assertEqual(response.status_code, 202)
+        self.assert_event(self.editor.pk, "create", response.data["id"], "success", 202)
         stored = json.dumps(list(self.events.values()), default=str)
         for secret in (str(token), "private-title-secret", "private-password-secret", "private-url-secret", "forged-outcome", "forged-action", "upload.png", "object_key"):
             self.assertNotIn(secret, stored)
