@@ -31,18 +31,18 @@
 | T11 | Nginx deployment with Gunicorn | Optional, included in scope | Completed; reviewed by user; merged into develop |
 | T12 | Celery background document storage | Optional, included in scope | Completed; reviewed by user; merged into develop |
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Completed; reviewed by user; merged into develop |
-| T14 | Final regression checks and Git Flow release | Delivery | In progress; release version requested |
+| T14 | Final regression checks and Git Flow release | Delivery | v0.1.0 candidate verified; shared release review pending |
 
-## Checkpoint — T14 (release version pending)
+## Checkpoint — T14 (v0.1.0; shared release review pending)
 
-- Preparation is isolated on `codex/release-preparation` from approved T13 merge `fbd4983`. The current package/lockfile version is 0.1.0 and no release tag exists. The user has been asked to choose the release number; no answer has been assumed. After that choice, rename to `release/<version>` and align metadata if needed before opening the draft PR into `main`.
+- The user selected **v0.1.0**. The temporary preparation branch was renamed to `release/0.1.0`, retaining its base at approved T13 merge `fbd4983` and verified packaging checkpoint `b56f02f`. Package and lockfile already match 0.1.0; dependencies/runtime sources remain unchanged. Remote ancestry was checked and no existing v0.1.0 tag was found. A dedicated draft PR targets `main` for the shared release review.
 - A real image inspection reproduced agent scratch inside the runtime image. `.dockerignore` and `.gitignore` now exclude `.superpowers/`; actual rebuilt-image inspection confirms scratch, Git metadata, runtime env files and staged bytes are absent. Tracked-source archive inspection excludes local runtime/key artifacts too. No application behavior, dependencies or migrations changed.
 - Added [release notes](../CHANGELOG.md) and a [release checklist](release-checklist.md) recording scope, compatibility, exact evidence, known limits and separate publication gates.
 - Final disposable integration passed **263 PostgreSQL tests**, clean startup/migrations, warning-free schema and Nginx checks, every existing JWT/storage/cache/worker/socket/proxy/outage/expiry/recreation check and exactly **37 durable audit events**. Terminal staging was empty; the disposable stack was removed and every pre-existing volume preserved.
 - Production Compose security settings, example ports and read-only mounts were validated; non-root Nginx TLS syntax passed using an ephemeral dummy certificate with no published ports. This is local syntax validation, not real certificate issuance or public deployment.
 - The development stack runs the corrected images; all **six services** are healthy, all **five original volumes** are preserved, active-image scratch/env/Git exclusion passes, and migration/schema/Nginx checks pass again.
 - One independent release-readiness review found **no Critical, Important or Minor issues**. It checked packaging, notes, requirement coverage and Git Flow gates; unchanged feature internals retain their prior T01–T13 reviews. The parent performed the actual runtime checks. No second review or new deferred minor is needed.
-- Version choice, versioned candidate PR and shared review remain outstanding. Selecting a version does not authorize the main merge or tag. After the concrete release PR is approved, merge with its expected head, create the agreed annotated tag on the main merge, merge main back into develop and verify remote ancestry/tag target. No public deployment or published GitHub Release has been performed.
+- The version is agreed; shared review of the concrete candidate still precedes the main merge and tag. After the release PR is approved, merge with its expected head, create annotated `v0.1.0` on the main merge, merge main back into develop and verify remote ancestry/tag target. No main merge, tag, public deployment or published GitHub Release is claimed by this candidate checkpoint.
 - Accepted storage/publication/replay limitations and the two prior T11 coverage minors remain explicit in the release checklist; this packaging checkpoint does not claim new recovery, capacity or public TLS guarantees.
 
 ## Completed Review — T13
@@ -450,7 +450,7 @@
 - Mark tasks reviewed only when their required implementation, evidence, and user review are complete.
 - Preserve the approved runtime/API behavior and deployment boundaries; release preparation is packaging, evidence and Git Flow delivery, not another feature expansion.
 - Files: `.dockerignore`/`.gitignore` for actual scratch exclusion, `CHANGELOG.md` and `docs/release-checklist.md` for scope/evidence/operator handoff, existing README and implementation/task checklists. Update `pyproject.toml`/`uv.lock` only if the selected release version differs from the current 0.1.0. API schema version `v1` is separate from package/release numbering.
-- [ ] Agree the release version; create the versioned `release/<version>` branch from updated `develop`.
+- [x] Agree the release version; create the versioned `release/<version>` branch from updated `develop`. User selected v0.1.0; `release/0.1.0` retains the verified preparation commit and existing matching package/lockfile metadata.
 - [x] Audit the release diff/archive and exclude local agent scratch from Git and Docker images; verify the built runtime image contains neither scratch nor runtime secrets/staging artifacts.
 - [x] Run the complete PostgreSQL and disposable six-service integration gate, migration/schema/proxy checks, and production-example syntax validation without public deployment. Final 263-test/37-event integration passed; dummy-cert TLS check passed without publishing ports; existing volumes were preserved.
 - [x] Record release notes, exact verification evidence and accepted limitations; obtain one independent release review and fix blocking findings with targeted regression evidence. No Critical/Important/Minor findings.

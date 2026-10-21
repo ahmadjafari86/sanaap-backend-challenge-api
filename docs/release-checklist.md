@@ -1,8 +1,9 @@
 # Release checklist
 
-The release candidate is prepared from `develop` after the approved T13 merge
-`fbd4983`. The package currently declares `0.1.0`; the release version has been
-requested from the user. This document records preparation, not publication.
+The user selected **v0.1.0**. The candidate is on `release/0.1.0`, prepared from
+`develop` after the approved T13 merge `fbd4983`. Package and lockfile already
+declare `0.1.0`, so dependencies and runtime behavior need no version changes.
+This document records preparation, not publication.
 
 ## Contents
 
@@ -19,7 +20,8 @@ requested from the user. This document records preparation, not publication.
 
 - [x] T13 user approval and PR #7 merge into `develop`; 263 PostgreSQL tests passed
   without skips immediately before that merge (29.005 seconds).
-- [ ] Agree release version and align package/lockfile metadata if necessary.
+- [x] Agree release version and align package/lockfile metadata if necessary:
+  selected v0.1.0; both files already match.
 - [x] Inspect the release archive/diff and actual image for local scratch/secrets.
 - [x] Run clean six-service integration, complete PostgreSQL regressions, startup,
   migration drift/application, warning-free OpenAPI and active Nginx syntax.
@@ -30,7 +32,7 @@ requested from the user. This document records preparation, not publication.
 - [x] Verify development service health and preservation of all existing volumes.
 - [x] Complete one independent release review; resolve blocking findings and record
   accepted limitations without expanding the feature scope.
-- [ ] Commit/push the candidate and attach a draft `release/<version>` → `main` PR.
+- [ ] Commit/push the candidate and attach a draft `release/0.1.0` → `main` PR.
 
 The final disposable T14 run passed all 263 PostgreSQL regressions and every live
 gate above, including exactly 37 audit events and empty terminal staging. It
@@ -50,7 +52,7 @@ The candidate PR is the T14 review checkpoint. Version selection alone does not
 approve publication. After the user reviews the concrete candidate:
 
 - [ ] Mark the reviewed PR ready and merge it into `main` with its expected head.
-- [ ] Create the agreed annotated `v<version>` tag on the reviewed main merge and
+- [ ] Create the agreed annotated `v0.1.0` tag on the reviewed main merge and
   push it without overwriting any existing tag.
 - [ ] Merge `main` back into `develop`, preserving Git Flow release history.
 - [ ] Verify remote branch ancestry, exact tag target and a clean checkout.

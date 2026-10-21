@@ -1,6 +1,6 @@
 # Changelog
 
-## Initial delivery
+## 0.1.0
 
 - Shared JPEG/PNG documents with title search, creator filtering and pagination.
 - Admin, editor and viewer application roles with access/refresh JWT authentication,
