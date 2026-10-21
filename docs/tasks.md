@@ -35,7 +35,7 @@
 
 ## Checkpoint — T13 (shared user review pending)
 
-- Started `feature/websocket-notifications` from approved T12 merge `cea12d9` on `develop`. Implementation and verification are complete; merge and T14 remain gated on shared user review. A dedicated draft PR targets `develop`.
+- Started `feature/websocket-notifications` from approved T12 merge `cea12d9` on `develop`. Implementation and verification are complete; merge and T14 remain gated on shared user review. Verified implementation `e04f9cc` is pushed in draft [PR #7](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/7) targeting `develop`.
 - Added Channels `/ws/documents/` with explicit Origin admission, a five-second first-frame access-JWT deadline, all three shared-document roles, active-user/current-role checks before every hint/ping, and automatic closure at access expiry. Refresh/session/query authentication, binary/oversized/malformed frames and repeated authentication cannot subscribe. README specifies frames, close codes, reconnect/refetch and production HTTPS/WSS configuration.
 - Worker READY transitions, retained synchronous internal READY creation and successful updates emit only event type and document id after commit. Rollback, FAILED/PENDING and deletion do not emit document events; duplicate worker delivery does not repeat READY. Publication and cleanup are bounded, redact exception details and cannot undo committed metadata/audit outcomes.
 - Added Redis DB 2 separately from cache DB 0 and broker DB 1. Gunicorn now uses the maintained Uvicorn ASGI worker for both HTTP and WebSocket, with 8 KiB messages, a 16-message receive queue and 20-second protocol pings. Nginx upgrades only the exact notification path, rejects queries before application logs and retains controlled HTTP forwarding/static/upload behavior with a 75-second socket idle timeout.
@@ -426,7 +426,7 @@
 - [x] Write/run failing commit/rollback/duplicate/error publication regressions and implement READY/update hooks.
 - [x] Update Gunicorn/ASGI/Nginx/Redis configuration and verify real WebSocket delivery from HTTP and Celery through Nginx, including dependency failure and cleanup.
 - [x] Run full PostgreSQL, migration/schema and disposable integration checks; obtain one independent whole-feature review and resolve blocking findings. Final 263-test/37-event integration passed; both Important review findings and the retained-token expiry check were fixed with RED→GREEN evidence.
-- [ ] Commit/push a verified draft PR into `develop`; hold before merge/T14 for shared user review.
+- [x] Commit/push a verified draft PR into `develop`; hold before merge/T14 for shared user review. Draft [PR #7](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/7) is ready for that checkpoint.
 
 ### Task 14: T14 — Release
 
