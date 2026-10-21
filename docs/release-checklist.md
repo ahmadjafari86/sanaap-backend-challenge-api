@@ -1,11 +1,16 @@
-# Release checklist
+# Release checklist — v0.1.0
 
-The user selected **v0.1.0**. The candidate is on `release/0.1.0`, prepared from
-`develop` after the approved T13 merge `fbd4983`. Package and lockfile already
-declare `0.1.0`, so dependencies and runtime behavior need no version changes.
-Draft [PR #8](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/8)
-targets `main` for shared release review. This document records preparation,
-not publication.
+The user selected and approved **v0.1.0**, prepared on `release/0.1.0` after
+T13 merge `fbd4983`. [PR #8](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/8)
+merged into `main` at `17133d50264dbdfe174c56765a4a5bf9f7dce378`.
+Annotated [tag v0.1.0](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/tree/v0.1.0)
+points to that exact merge. [PR #9](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/9)
+merged `main` back into `develop` at `4d5cd37276e4975bb0f0dc0912ac892ba904e514`.
+Package and lockfile both declare `0.1.0`; runtime behavior and dependencies were
+unchanged during release preparation.
+
+This completion record is maintained on `develop` after publication. The immutable
+tag retains the preparatory checklist as it stood before the external Git actions.
 
 ## Contents
 
@@ -49,17 +54,21 @@ Independent release review found no Critical, Important or Minor issues.
 The development stack also runs the corrected images: all six services are
 healthy, all five original volumes are preserved, active-image scratch/env/Git
 exclusion passes, and migration/schema/Nginx checks pass again.
+Immediately before the approved main merge, all 263 PostgreSQL tests passed again
+without skips in 30.158 seconds. Hashes of 84 running code/test/build files matched
+the reviewed branch. The main release merge has exactly the reviewed candidate's
+tree, and the backmerge initially gave `main` and `develop` identical files.
 
-## Shared review and publication
+## Completed publication
 
-The candidate PR is the T14 review checkpoint. Version selection alone does not
-approve publication. After the user reviews the concrete candidate:
+The user approved the concrete T14 release checkpoint before these operations:
 
-- [ ] Mark the reviewed PR ready and merge it into `main` with its expected head.
-- [ ] Create the agreed annotated `v0.1.0` tag on the reviewed main merge and
-  push it without overwriting any existing tag.
-- [ ] Merge `main` back into `develop`, preserving Git Flow release history.
-- [ ] Verify remote branch ancestry, exact tag target and a clean checkout.
+- [x] Mark PR #8 ready and merge it into `main` with expected head `2faa22d`.
+- [x] Create and push annotated `v0.1.0` on reviewed main merge `17133d5` without
+  overwriting an existing tag; remote tag object `d0d23d7` peels to that merge.
+- [x] Merge `main` back into `develop` through PR #9, preserving Git Flow history.
+- [x] Verify release ancestry in both remote branches, exact tag target and a clean
+  checkout. Subsequent closeout changes on `develop` are documentation only.
 
 Creating a published GitHub Release or deploying publicly is outside this
 checkpoint unless explicitly requested. Existing application data is preserved.
