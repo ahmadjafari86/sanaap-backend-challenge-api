@@ -1,0 +1,25 @@
+# Replace api.example.com with the deployment's actual public DNS name.
+server {
+    listen 8080;
+    server_name api.example.com;
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 'ok\n';
+    }
+
+    location / {
+        return 308 https://api.example.com$request_uri;
+    }
+}
+
+server {
+    listen 8443 ssl;
+    server_name api.example.com;
+    ssl_certificate /run/tls/fullchain.pem;
+    ssl_certificate_key /run/tls/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    include /etc/nginx/proxy-locations.conf;
+}
