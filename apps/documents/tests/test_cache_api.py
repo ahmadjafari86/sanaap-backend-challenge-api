@@ -16,7 +16,7 @@ from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Document
+from ..models import Document
 from .test_update_api import image_bytes, image_upload
 
 User = get_user_model()

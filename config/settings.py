@@ -129,8 +129,8 @@ SPECTACULAR_SETTINGS = {
     ),
     "VERSION": "v1",
     "SERVE_INCLUDE_SCHEMA": False,
-    "SERVE_AUTHENTICATION": [],
-    "SERVE_PERMISSIONS": ["rest_framework.permissions.AllowAny"],
+    "SERVE_AUTHENTICATION": ["rest_framework.authentication.SessionAuthentication"],
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAdminUser"],
     "COMPONENT_SPLIT_REQUEST": True,
     "SWAGGER_UI_SETTINGS": {"deepLinking": True, "persistAuthorization": False, "docExpansion": "none"},
 }

@@ -23,13 +23,18 @@ initializes the MinIO buckets, and collects static assets.
 
 Services:
 - API through Nginx: http://127.0.0.1:8000
+- Django admin: http://127.0.0.1:8000/admin/
 - Swagger UI: http://127.0.0.1:8000/api/docs/
 - OpenAPI schema: http://127.0.0.1:8000/api/schema/
 - MinIO object endpoint: http://127.0.0.1:19000
 - MinIO console: http://127.0.0.1:19001
 
 MinIO console credentials are configured in `.env` through
-`MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD`.
+`MINIO_ROOT_USER` (username) and `MINIO_ROOT_PASSWORD` (password). Open
+http://127.0.0.1:19001/login in your browser and enter those values. This is a
+separate account from Django's administrator. Port 19000 serves the object API;
+port 19001 serves the console. Both ports are bound to this computer's loopback
+interface. The disposable integration stack does not publish the console.
 
 Useful commands:
 
@@ -37,11 +42,16 @@ Useful commands:
 make ps
 make check
 make logs
+make logs SERVICES=backend
 make shell
+make superuser
 make down
 ```
 
 `make down` preserves database and object-storage volumes.
+`make logs` shows the last 100 lines and keeps following new messages. Use
+`SERVICES=backend` (or another service name) to follow one service. Press Ctrl+C
+to stop following; the containers keep running.
 
 Nginx runs as an unprivileged user and forwards requests to Gunicorn's Uvicorn
 ASGI workers on the
@@ -74,27 +84,33 @@ The example configuration is for local development. Production requires HTTPS,
 Create the initial Django administrator interactively:
 
 ```bash
-docker compose exec backend python manage.py createsuperuser --username admin
+make superuser
 ```
 
-Set its application role using `make shell`, then run:
-
-```python
-from apps.accounts.models import User
-
-application_admin = User.objects.get(username="admin")
-application_admin.role = User.Role.ADMIN
-application_admin.save(update_fields=["role"])
-```
+Run this after `make up`; Django prompts for a username, email and password.
+The new account is both a Django superuser and an application admin
+(`role="admin"`); no shell command or manual role update is needed.
+`make up` never creates an account automatically. Sign in at `/admin/` with
+the account you created. Existing accounts keep their roles; if an older
+superuser needs API administration, change its application role on the Users
+page in Django admin.
 
 Application API administration requires `role="admin"`. Django's staff/superuser
-flags control the Django administration site, and newly created users default to
-the viewer application role. After this bootstrap, an application admin can
+flags control the Django administration site. Ordinary new users default to
+the viewer application role; `createsuperuser` defaults to the admin role.
+After this bootstrap, an application admin can
 create users and assign roles through the API. Public registration is unavailable.
+
+The **Documents** section of Django admin provides metadata browsing, title,
+filename and creator-username search, and status/content-type/date filters.
+It is read-only even for superusers. Document creation, updates and deletion use
+the API so storage, cache versions and audit events stay consistent. Other staff
+accounts need the Django `documents.view_document` permission to browse this
+section. Internal object and staging keys are not shown.
 
 ## Authentication and Swagger
 
-Open `/api/docs/` and expand **Authentication → Obtain an access and refresh
+Sign in at `/admin/`, then open `/api/docs/` and expand **Authentication → Obtain an access and refresh
 token**. Use **Try it out** with the admin's username and password. The response
 contains `access` and `refresh`. Click **Authorize** and enter the access token;
 Swagger adds the `Bearer` prefix. It does not persist authorization across reloads.
@@ -112,8 +128,13 @@ are not rotated. The same payload sent to `POST /api/v1/auth/logout/` blacklists
 that refresh token and returns HTTP 200 with `{}`. Existing access tokens remain
 valid until expiry; invalid/expired/blacklisted refresh tokens return 401.
 
-The schema and Swagger page are public, including when an invalid Authorization
-header is present. Schema generation does not read live document/user data.
+The schema and Swagger page require a valid Django admin session for an active
+staff user. Requests without that session redirect to `/admin/login/` and return
+to the requested page after login. Logout, session expiry, deactivation or loss
+of staff status removes access. A bearer JWT or the application's admin role
+alone cannot open these pages. Both documentation responses disable caching.
+The admin session opens the documentation; **Authorize** still needs an access
+JWT to call the business API. Schema generation does not read live document/user data.
 Swagger's default JavaScript/CSS assets load from a CDN and require browser
 internet access. The API and schema are served locally; use
 `/api/schema/?format=json` for a JSON schema download.
@@ -233,7 +254,8 @@ disposable `sanaap-t09-*` project with fresh credentials, migrations, and volume
 and runs the full regression suite. Random loopback ports expose only its API
 and MinIO endpoint. The existing stack keeps running.
 
-Checks cover JWT roles, exact upload/download bytes, private bucket access,
+Checks cover admin login/logout and session-protected documentation, JWT roles,
+exact upload/download bytes, private bucket access,
 actual 60-second URL expiration, replacement/deletion cleanup, and recovery
 from Redis and MinIO outages, plus durable audit records for every tested
 operation. It also checks static file bytes/MIME types, public pagination links,
