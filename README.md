@@ -254,7 +254,8 @@ disposable `sanaap-t09-*` project with fresh credentials, migrations, and volume
 and runs the full regression suite. Random loopback ports expose only its API
 and MinIO endpoint. The existing stack keeps running.
 
-Checks cover JWT roles, exact upload/download bytes, private bucket access,
+Checks cover admin login/logout and session-protected documentation, JWT roles,
+exact upload/download bytes, private bucket access,
 actual 60-second URL expiration, replacement/deletion cleanup, and recovery
 from Redis and MinIO outages, plus durable audit records for every tested
 operation. It also checks static file bytes/MIME types, public pagination links,

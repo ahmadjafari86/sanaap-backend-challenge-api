@@ -85,3 +85,11 @@
       idempotency, and PENDING/READY/FAILED states (T12 reviewed by user and merged through PR #6).
 - [x] Authenticated Channels notifications after successful commits (T13 reviewed by user and merged through PR #7; 263 PostgreSQL tests and real Redis/Nginx delivery verified).
 - [x] Test optional features (T10–T13 regression/integration gates passed; the final release checkpoint remains T14).
+
+## 7. Post-release Administration Workflow (T15)
+- [x] Add read-only document metadata, search and filters to Django admin.
+- [x] Move tests into per-application packages, retaining every original test.
+- [x] Require valid active-staff admin sessions for Swagger and the HTTP schema.
+- [x] Create Django and application administrators together with `make superuser`.
+- [x] Verify continuous `make logs`, optional service selection and MinIO login instructions.
+- [x] Pass 279 PostgreSQL tests, independent review and disposable real-service integration.
