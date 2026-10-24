@@ -258,6 +258,7 @@ class BackgroundWorkerTests(TestCase):
         stage = Path(self.directory.name) / document.staging_key
         with self.captureOnCommitCallbacks(execute=True):
             delete_document(document_id=document.pk, actor_id=self.editor.pk)
+        deliver_outbox_once()
         self.assertFalse(stage.exists())
         self.assertFalse(self.process(document))
         self.assertFalse(Document.objects.exists())

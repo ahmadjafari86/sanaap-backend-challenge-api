@@ -23,9 +23,11 @@ import zlib
 if __package__:
     from .proxy_checks import check_documentation_access, check_forwarded_links, check_proxy_http, check_upload_limits
     from .websocket_checks import SocketChecks
+    from .outbox_checks import run_outbox_checks
 else:
     from proxy_checks import check_documentation_access, check_forwarded_links, check_proxy_http, check_upload_limits
     from websocket_checks import SocketChecks
+    from outbox_checks import run_outbox_checks
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -215,6 +217,13 @@ def main():
             return run(compose + ["exec", "-T", "backend", "python", "manage.py", "shell", "-c", code],
                        input_text=json.dumps(value) if value is not None else None)
 
+        def wait_shell(code, timeout=60):
+            deadline = time.monotonic() + timeout
+            while shell(code).splitlines()[-1] != "True":
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("Timed out waiting for committed storage cleanup.")
+                time.sleep(.25)
+
         shell(
             "import json, sys; from django.contrib.auth import get_user_model; from apps.documents.models import Document, DocumentAuditEvent; "
             "User = get_user_model(); data = json.load(sys.stdin); "
@@ -342,8 +351,8 @@ def main():
         assert updated["creator"] == second["creator"] and client.http("GET", new_url) == replacement
         second_key = unquote(urlsplit(new_url).path).split("/", 2)[2]
         old_key = unquote(urlsplit(old_url).path).split("/", 2)[2]
-        shell("from django.core.files.storage import default_storage; "
-              f"assert not default_storage.exists({old_key!r}) and default_storage.exists({second_key!r})")
+        wait_shell("from django.core.files.storage import default_storage; "
+                   f"print(not default_storage.exists({old_key!r}) and default_storage.exists({second_key!r}))")
         orphan = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Cleanup outage"}, image=original, expected=202)
         orphan = client.wait_document(orphan, editor)
         for role in tokens:
@@ -367,9 +376,9 @@ def main():
         failed_page = client.api("GET", "/api/v1/documents/?search=Failed%20upload", token=viewer)
         assert failed_page["count"] == 1 and failed_page["results"][0]["status"] == "FAILED"
         client.api("DELETE", f"/api/v1/documents/{failed['id']}/", token=admin["access"], expected=204)
-        shell("from django.core.files.storage import default_storage; "
-              f"assert default_storage.exists({orphan_key!r})")
-        print("Storage outages, rollback, recovery, replacement cleanup and documented orphan behavior passed.", flush=True)
+        wait_shell("from django.core.files.storage import default_storage; "
+                   f"print(not default_storage.exists({orphan_key!r}))")
+        print("Storage outages, rollback, recovery and durable replacement/deletion cleanup passed.", flush=True)
 
         client.api("POST", "/api/v1/auth/logout/", data={"refresh": tokens["viewer"]["refresh"]})
         client.api("POST", "/api/v1/auth/token/refresh/", data={"refresh": tokens["viewer"]["refresh"]}, expected=401)
@@ -385,9 +394,8 @@ def main():
               f"assert default_storage.exists({first_key!r})")
         client.api("DELETE", detail, token=admin["access"], expected=204)
         client.api("DELETE", second_detail, token=admin["access"], expected=204)
-        shell("from django.core.files.storage import default_storage; "
-              f"assert not default_storage.exists({first_key!r}) and not default_storage.exists({second_key!r}); "
-              f"default_storage.delete({orphan_key!r})")
+        wait_shell("from django.core.files.storage import default_storage; "
+                   f"print(not default_storage.exists({first_key!r}) and not default_storage.exists({second_key!r}))")
         print("Actual URL expiry, logout semantics and successful document/object deletion passed.", flush=True)
         for role in tokens:
             assert sockets.command("receive", name=role, timeout=.1) == {"quiet": True}
@@ -453,6 +461,8 @@ def main():
         ] + [
             ["integration-viewer", "download_url", broker_pending["id"], "failure", 409],
         ]
+        wait_shell("from apps.documents.models import OutboxMessage; "
+                   "print(not OutboxMessage.objects.filter(status__in=['PENDING', 'PROCESSING']).exists())")
         shell(
             "import json, sys; from collections import Counter; from django.contrib.auth import get_user_model; "
             "from apps.documents.models import Document, DocumentAuditEvent; "
@@ -466,6 +476,7 @@ def main():
             expected_events,
         )
         print("All 37 durable audit events match actors/outcomes; terminal/deleted documents left no staged files.", flush=True)
+        run_outbox_checks(compose=compose, phase="core", run=run)
     except Exception:
         if active:
             try:

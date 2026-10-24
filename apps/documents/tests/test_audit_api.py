@@ -19,6 +19,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from ..models import Document, DocumentAuditEvent
 from ..services import delete_document, update_document
+from .outbox_helpers import deliver_outbox_once
 
 User = get_user_model()
 
@@ -278,10 +279,11 @@ class DocumentAuditAPITests(APITestCase):
         self.client.force_authenticate(user=self.admin)
         with (
             patch.object(self.storage, "delete", side_effect=OSError("private-cleanup-secret")),
-            self.assertLogs("apps.documents.services", level="ERROR"),
+            self.assertLogs("apps.documents.outbox_delivery", level="WARNING"),
             self.captureOnCommitCallbacks(execute=True),
         ):
             response = self.client.delete(self.detail)
+            deliver_outbox_once()
         self.assertEqual(response.status_code, 204)
         self.assertFalse(Document.objects.exists())
         self.assert_event(self.admin.pk, "delete", self.document.pk, "success", 204)

@@ -1,4 +1,5 @@
 import logging
+import re
 from functools import partial
 from uuid import uuid4
 
@@ -10,6 +11,7 @@ from .caching import invalidate_document_metadata
 from .exceptions import DocumentNotReady
 from .models import Document, DocumentAuditEvent
 from .notifications import notify_document
+from .outbox import enqueue_message
 
 logger = logging.getLogger(__name__)
 
@@ -54,13 +56,21 @@ def create_document(*, title, uploaded_file, creator):
 
 def _delete_document_object(object_key):
     try:
+        # A commit acknowledgement can fail after PostgreSQL accepted a new
+        # reference. Unknown ownership must defer deletion, never destroy data.
+        if Document.objects.filter(object_key=object_key, status="READY").exists():
+            return True
         default_storage.delete(object_key)
+        return True
     except Exception as error:
-        logger.error(
-            "Document object cleanup failed for %s (%s).",
-            object_key,
-            type(error).__name__,
-        )
+        logger.error("Document object cleanup failed (%s).", type(error).__name__)
+        try:
+            with transaction.atomic():
+                enqueue_message(kind="storage.object_delete_requested", document_id=None,
+                                payload={"object_key": object_key}, dedupe_key=f"object-compensation:{uuid4()}")
+        except Exception as failure:
+            logger.error("Object cleanup persistence deferred (%s).", type(failure).__name__)
+        return False
 
 
 def update_document(*, document_id, title=None, uploaded_file=None, actor_id=None):
@@ -110,7 +120,9 @@ def update_document(*, document_id, title=None, uploaded_file=None, actor_id=Non
             )
 
             if stored_key is not None:
-                transaction.on_commit(partial(_delete_document_object, previous_key))
+                enqueue_message(kind="storage.object_delete_requested", document_id=document.pk,
+                                payload={"object_key": previous_key},
+                                dedupe_key=f"object-replace:{document.pk}:{previous_version}")
 
             transaction.on_commit(partial(notify_document, document.pk, "document.updated"))
 
@@ -127,6 +139,13 @@ def delete_document(*, document_id, actor_id=None):
         object_key = document.object_key
         metadata_version = document.metadata_version
         staging_key = document.staging_key
+        enqueue_message(kind="storage.object_delete_requested", document_id=document_id,
+                        payload={"object_key": object_key},
+                        dedupe_key=f"object-delete:{document_id}:{metadata_version}")
+        if re.fullmatch(r"[0-9a-f]{32}\.stage", staging_key):
+            enqueue_message(kind="storage.staging_delete_requested", document_id=document_id,
+                            payload={"staging_key": staging_key},
+                            dedupe_key=f"staging-delete:{document_id}:{metadata_version}")
         document.delete()
         record_document_event(
             actor_id=actor_id,
@@ -138,10 +157,6 @@ def delete_document(*, document_id, actor_id=None):
         transaction.on_commit(
             partial(invalidate_document_metadata, document_id, metadata_version),
         )
-        transaction.on_commit(partial(_delete_document_object, object_key))
-        if staging_key:
-            from .background import delete_staged_file
-            transaction.on_commit(partial(delete_staged_file, staging_key))
 
 
 def get_document_download_url(*, document, actor_id=None):

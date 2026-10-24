@@ -17,6 +17,7 @@ from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from ..models import Document
+from .outbox_helpers import deliver_outbox_once
 from .test_update_api import image_bytes, image_upload
 
 User = get_user_model()
@@ -285,6 +286,8 @@ class DocumentMetadataCacheTests(MetadataCacheFixture, APITestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(cache.get(key), old)
         self.assertEqual(self.client.get(self.url).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(self.storage.exists(self.document.object_key))
+        deliver_outbox_once()
         self.assertFalse(self.storage.exists(self.document.object_key))
 
     def test_image_replacement_refreshes_cached_file_metadata(self):

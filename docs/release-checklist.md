@@ -1,5 +1,27 @@
 # Release checklist — v0.1.0
 
+## Transactional Outbox Phase 1 — Unmerged Feature Checkpoint
+
+This addition is separate from the historical v0.1.0 release record below.
+Work stays on `codex/transactional-outbox-phase1`, based on `develop` at `008f1f7`.
+The user explicitly prohibits merges into `develop` or `main`; no release/tag is included.
+
+- [x] T16–T18: additive schema/enqueue, relay/leases/status/replay, upload receipts
+  and periodic stale/legacy recovery implemented with focused RED→GREEN evidence.
+- [x] T19 cleanup: durable deletion/replacement/staging obligations, current-owner
+  checks and uncertain-commit compensation protection; 330 PostgreSQL tests pass.
+- [x] Fresh migration and upgrade from documents 0004 preserve document/audit
+  snapshots and create the expected queue indexes.
+- [ ] Complete seven-service disposable integration, including post-send process
+  exit, real broker task loss/duplication, concurrent relays, legacy tasks and
+  cleanup recovery; preserve pre-existing volumes.
+- [ ] Complete independent whole-branch review and resolve blocking findings.
+- [ ] Record final evidence and leave the feature branch ready for user review.
+
+Phase 2 (T20–T23) remains deferred. Cache invalidation and WebSocket hints retain
+their existing best-effort callbacks; pre-transaction orphan writes remain a
+documented limit. Do not mark this feature merged or released.
+
 The user selected and approved **v0.1.0**, prepared on `release/0.1.0` after
 T13 merge `fbd4983`. [PR #8](https://github.com/ahmadjafari86/sanaap-backend-challenge-api/pull/8)
 merged into `main` at `17133d50264dbdfe174c56765a4a5bf9f7dce378`.

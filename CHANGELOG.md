@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Transactional outbox Phase 1 on `codex/transactional-outbox-phase1`: atomic
+  upload obligations, independent PostgreSQL relay, processing receipts, durable
+  storage retries and automatic recovery of lost/unreceipted uploads.
+- Durable MinIO/staging cleanup after document replacement/deletion, replayable
+  publication failures, ownership-aware compensation and basic status/replay tools.
+- Seven-service disposable fault checks for relay crashes, Redis task loss,
+  duplicate delivery, legacy queued tasks and cleanup recovery. WebSocket/cache
+  publication retains its existing best-effort behavior until Phase 2.
 - Read-only document metadata browsing, searching and filtering in Django admin.
 - Swagger and HTTP OpenAPI schema restricted to valid active-staff admin sessions,
   with login redirects and no-cache responses; business APIs still use JWTs.

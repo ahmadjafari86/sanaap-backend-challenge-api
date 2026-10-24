@@ -17,6 +17,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from ..models import Document
 from ..views import DocumentDetailView
+from .outbox_helpers import deliver_outbox_once
 
 User = get_user_model()
 
@@ -75,6 +76,8 @@ class DocumentDeleteAPITests(APITestCase):
             self.assertFalse(Document.objects.filter(pk=self.document.pk).exists())
             self.assertTrue(self.storage.exists(self.document.object_key))
 
+        self.assertTrue(self.storage.exists(self.document.object_key))
+        deliver_outbox_once()
         self.assertFalse(self.storage.exists(self.document.object_key))
         self.assertTrue(Document.objects.filter(pk=self.other_document.pk).exists())
         self.assertTrue(self.storage.exists(self.other_document.object_key))
@@ -123,6 +126,7 @@ class DocumentDeleteAPITests(APITestCase):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.delete(self.url)
 
+        deliver_outbox_once()
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Document.objects.filter(pk=self.document.pk).exists())
         self.assertFalse(self.storage.exists(self.document.object_key))
@@ -161,6 +165,7 @@ class DocumentDeleteAPITests(APITestCase):
             first = self.client.delete(self.url)
             second = self.client.delete(self.url)
 
+        deliver_outbox_once()
         self.assertEqual(first.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(second.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(self.storage.listdir("documents")[1], ["keep.png"])
@@ -199,10 +204,11 @@ class DocumentDeleteAPITests(APITestCase):
         self.client.force_authenticate(user=self.admin)
         with (
             patch.object(self.storage, "delete", side_effect=OSError("private-storage-details")),
-            self.assertLogs("apps.documents.services", level="ERROR") as logs,
+            self.assertLogs("apps.documents.outbox_delivery", level="WARNING") as logs,
             self.captureOnCommitCallbacks(execute=True),
         ):
             response = self.client.delete(self.url)
+            deliver_outbox_once()
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Document.objects.filter(pk=self.document.pk).exists())
@@ -257,6 +263,7 @@ class DocumentDeleteAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Document.objects.filter(pk=self.document.pk).exists())
+        deliver_outbox_once()
         self.assertEqual(self.storage.listdir("documents")[1], ["keep.png"])
 
 
@@ -312,6 +319,7 @@ class ConcurrentDocumentDeletionTests(TransactionTestCase):
             finally:
                 resume_upload.set()
             replacement_status = future.result(timeout=20)
+            deliver_outbox_once()
 
         self.assertEqual(deletion.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(replacement_status, status.HTTP_404_NOT_FOUND)

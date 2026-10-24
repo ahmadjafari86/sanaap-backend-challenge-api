@@ -220,8 +220,8 @@ inactive JWT users return 401. A disallowed or unknown application role returns
 update of a PENDING/FAILED document returns 409.
 
 Known creation/update/deletion service errors and download signing/lookup errors
-return a generic 503. Storage cleanup after an already committed update or
-deletion is best effort and does not change its success status. Initial database
+return a generic 503. Storage cleanup after a committed update/deletion is queued
+durably; its retries do not change the successful API status. Initial database
 outages on list/detail/user queries can still produce a standard server error;
 Redis fallback does not make PostgreSQL optional. A staging/database failure
 before acceptance returns 503 without a new document. Once accepted, broker
@@ -437,18 +437,20 @@ deleted rows cannot upload again or duplicate storage events. Concurrent workers
 updates and deletion serialize on that row; writers may wait for storage I/O.
 
 Document deletion also locks and rereads the current row, removes its metadata
-inside the transaction, and deletes its current storage object and any staged file after commit.
-If the storage object is already missing, metadata deletion can still succeed.
-If post-commit storage cleanup fails, the API still returns HTTP 204 because
-the database deletion has committed; the private orphan is logged for cleanup.
+inside the transaction, and snapshots its object/staging keys into outbox messages.
+The relay deletes those files after commit; missing files count as success.
+Cleanup failures retry independently and eventually remain DEAD for explicit
+replay. The API still returns HTTP 204 because its metadata deletion committed.
 
 If recording a replacement fails, the service attempts to remove the new object
 and preserves the previous reference. Cleanup errors are logged; failure to
-delete an old object after commit does not undo a successful update.
+delete an old object does not undo a successful update; its outbox obligation
+remains observable/retryable. Previously signed URLs may work until cleanup or
+their original expiry; new URLs cannot be issued for deleted documents.
 
 There is no automatic orphan-object reconciler. A process crash between upload
-and database commit, a failed cleanup, or a crash before an after-commit callback
-runs can leave unreferenced objects that require reconciliation. Creation and replacement
+and database commit, or cleanup whose obligation cannot be recorded during a
+database outage, can leave unreferenced objects requiring reconciliation. Creation and replacement
 upload errors trigger best-effort deletion of the attempted UUID key. An upload
 that finishes after a timeout, or a backend that changes an unacknowledged key,
 can still leave an orphan despite that attempt. If a caller wraps the service
@@ -487,7 +489,7 @@ docker compose exec backend python manage.py run_outbox_relay --once --batch-siz
 publication budget (defaults: 1 second, 10, 60 seconds, 20). The independent
 service mounts private staging for cleanup and publishes no host ports.
 
-`make up` starts the worker alongside the API. Backend and worker share only the
+`make up` starts the worker and relay alongside the API. Backend, worker and relay share the
 private `staging_data` volume (files mode 0600, owner UID 10001); Nginx cannot
 read it. The worker uses the backend image and waits for backend startup/migrations,
 without running migrations or collectstatic itself. Redis DB 0 is metadata cache;
@@ -532,6 +534,19 @@ Celery behavior references: [Django transaction dispatch](https://docs.celeryq.d
 [idempotence and late acknowledgements](https://docs.celeryq.dev/en/stable/userguide/tasks.html),
 and [Redis visibility timeout](https://docs.celeryq.dev/en/stable/getting-started/backends-and-brokers/redis.html#visibility-timeout).
 
+For upgrades, apply the additive migration before enabling outbox-aware writers
+and deploy compatible workers before publishing UUID-bearing tasks. Backend
+startup applies migrations; the relay waits for backend health. Existing queued
+document-ID-only tasks and PENDING rows are supported by the recovery path.
+Preserve the staging volume. Inspect/drain obligations before rolling binaries
+back to the legacy implementation; never reverse/drop the outbox migration while
+work remains. The feature branch is kept separate from `develop` and `main`.
+
+`make integration` includes the Phase 1 `core` fault profile: stopped relay,
+actual Redis task loss, a process exiting immediately after broker publication,
+expired lease/duplicate delivery, concurrent relays, legacy tasks and MinIO
+cleanup outages. Each probe runs only in the validated disposable project.
+
 ## Document audit events
 
 `DocumentAuditEvent` stores the actor id, action (`create`, `update`, `delete`,
@@ -545,7 +560,8 @@ transaction. If the success event cannot be recorded, the API returns its
 existing safe 503 response and rolls back the mutation; new uploads use the
 existing best-effort compensation. A deletion whose metadata committed but
 whose object cleanup failed still records a successful deletion with status
-204. Cleanup failures remain in the redacted operator logs.
+204. Cleanup failures remain in the outbox and redacted operator logs; they do
+not add false business-operation failures.
 
 For background creation, `create/success/202` records acceptance. The worker's
 `store/success/200` records READY, or `store/failure/503` records FAILED, with the

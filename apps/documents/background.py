@@ -25,12 +25,21 @@ def staging_storage():
 
 
 def delete_staged_file(key):
+    if not re.fullmatch(r"[0-9a-f]{32}\.stage", key):
+        logger.error("Invalid staging identifier cannot be cleaned.")
+        return False
     try:
-        if not re.fullmatch(r"[0-9a-f]{32}\.stage", key):
-            raise ValueError("Invalid staging identifier")
         staging_storage().delete(key)
+        return True
     except Exception as error:
         logger.error("Staged file cleanup failed (%s).", type(error).__name__)
+        try:
+            with transaction.atomic():
+                enqueue_message(kind="storage.staging_delete_requested", document_id=None,
+                                payload={"staging_key": key}, dedupe_key=f"staging-compensation:{uuid4()}")
+        except Exception as failure:
+            logger.error("Staging cleanup persistence deferred (%s).", type(failure).__name__)
+        return False
 
 
 def stage_document(*, title, uploaded_file, creator):

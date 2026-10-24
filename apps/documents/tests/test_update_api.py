@@ -16,6 +16,7 @@ from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from ..models import Document
+from .outbox_helpers import deliver_outbox_once
 
 User = get_user_model()
 
@@ -128,6 +129,8 @@ class DocumentUpdateAPITests(APITestCase):
                         self.storage.open(self.document.object_key).read(), expected_bytes,
                     )
 
+                self.assertTrue(self.storage.exists(previous_key))
+                deliver_outbox_once()
                 self.assertFalse(self.storage.exists(previous_key))
                 self.assertEqual(self.document.title, "Original image")
                 self.assertEqual(self.document.creator_id, self.owner.pk)
@@ -144,6 +147,7 @@ class DocumentUpdateAPITests(APITestCase):
                 format="multipart",
             )
 
+        deliver_outbox_once()
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.document.refresh_from_db()
         self.assertEqual(self.document.title, "Replacement title")
@@ -367,10 +371,11 @@ class DocumentUpdateAPITests(APITestCase):
         self.client.force_authenticate(user=self.editor)
         with (
             patch.object(self.storage, "delete", side_effect=OSError("cleanup failed")),
-            self.assertLogs("apps.documents.services", level="ERROR"),
+            self.assertLogs("apps.documents.outbox_delivery", level="WARNING"),
             self.captureOnCommitCallbacks(execute=True),
         ):
             response = self.client.patch(self.url, {"file": image_upload()}, format="multipart")
+            deliver_outbox_once()
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.document.refresh_from_db()
@@ -466,6 +471,7 @@ class ConcurrentDocumentReplacementTests(TransactionTestCase):
         ):
             futures = [executor.submit(replace, color) for color in ("red", "green")]
             responses = [future.result(timeout=20) for future in futures]
+            deliver_outbox_once()
 
         self.assertEqual(responses, [status.HTTP_200_OK, status.HTTP_200_OK])
         document.refresh_from_db()

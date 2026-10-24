@@ -2,7 +2,7 @@
 
 from django.core.exceptions import ValidationError
 
-from .models import OutboxMessage
+from .models import Document, OutboxMessage
 from .outbox import validate_message
 
 
@@ -17,9 +17,15 @@ def dispatch_message(claim):
         )
     elif claim.kind == OutboxMessage.Kind.OBJECT_DELETE:
         from .services import default_storage
+        # Stable UUID keys are never reused by document writers. A delayed
+        # compensation becomes a no-op when a later attempt owns this key.
+        if Document.objects.filter(object_key=claim.payload["object_key"], status__in=["PENDING", "READY"]).exists():
+            return
         default_storage.delete(claim.payload["object_key"])
     elif claim.kind == OutboxMessage.Kind.STAGING_DELETE:
         from .background import staging_storage
+        if Document.objects.filter(staging_key=claim.payload["staging_key"], status="PENDING").exists():
+            return
         staging_storage().delete(claim.payload["staging_key"])
     else:
         raise ValidationError("Destination is not active in this phase.", code="unsupported_kind")

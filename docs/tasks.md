@@ -44,7 +44,7 @@
 | T16 | Outbox models and transactional enqueue | Phase 1 — Reliability | Implemented; 288 tests and fresh/0004 upgrade verified; branch review pending |
 | T17 | Independent relay, retry, leases and basic status/replay | Phase 1 — Reliability | Implemented; 303 tests, Compose and relay lifecycle verified; branch review pending |
 | T18 | Durable uploads, receipts, storage retries and automatic recovery | Phase 1 — Reliability | Implemented; 318 PostgreSQL tests verified; branch review pending |
-| T19 | Durable cleanup, core integration and rollout acceptance | Phase 1 — Delivery | Planned; depends on T16–T18; phase gate |
+| T19 | Durable cleanup, core integration and rollout acceptance | Phase 1 — Delivery | Implemented; 330 tests verified; live integration and branch review in progress |
 | T20 | Durable WebSocket notification publication | Phase 2 — Reliability | Deferred; after reviewed Phase 1 |
 | T21 | Cache invalidation and expanded audit consistency checks | Phase 2 — Reliability | Deferred; depends on T16–T20 |
 | T22 | Advanced operations, retention and orphan reports | Phase 2 — Operations | Deferred; depends on T16–T21 |
