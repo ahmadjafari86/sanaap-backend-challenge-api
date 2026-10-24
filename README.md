@@ -426,7 +426,9 @@ commits. Metadata-only updates retain the image and original creator.
 
 HTTP creation stages validated bytes privately before inserting PENDING metadata
 and its acceptance audit in one transaction. A database/staging failure attempts
-staging cleanup. Dispatch runs only after commit. The worker locks the row for
+staging cleanup after checking for a committed PENDING owner. A lost commit
+acknowledgement or unavailable ownership lookup preserves those bytes. Dispatch
+runs only after commit. The worker locks the row for
 one bounded storage attempt, uses the document's stable UUID object key, and
 atomically commits READY plus its storage audit. Failed acknowledgement/database
 recording triggers attempted-object cleanup. After rollback, compensation reacquires
@@ -501,7 +503,10 @@ Upload acceptance commits the document, acceptance audit and its first upload
 obligation atomically. Transient storage errors receive at most **four persisted
 logical attempts**. Each attempt commits a unique processing receipt with either
 the next delayed outbox message or a terminal state/audit and staging-cleanup
-message. Missing staged files and unexpected storage errors fail immediately.
+message. Every FAILED transition also records object cleanup, including missing
+staging and exhausted legacy attempts, so a prior skipped compensation cannot
+leave a partial upload without a cleanup obligation. Missing staged files and
+unexpected storage errors fail immediately.
 READY/FAILED rotate the metadata cache version; existing cache/notification
 callbacks remain best effort in Phase 1. Staging is removed by the relay after
 commit. Celery acknowledges late and requeues on worker-process loss.

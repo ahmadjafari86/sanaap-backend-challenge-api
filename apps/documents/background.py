@@ -29,6 +29,10 @@ def delete_staged_file(key):
         logger.error("Invalid staging identifier cannot be cleaned.")
         return False
     try:
+        # Acceptance may have committed before its acknowledgement was lost.
+        # Preserve owned bytes, and defer deletion if the lookup itself fails.
+        if Document.objects.filter(staging_key=key, status=Document.Status.PENDING).exists():
+            return True
         staging_storage().delete(key)
         return True
     except Exception as error:
@@ -80,6 +84,13 @@ def transition_document(document, state):
         enqueue_message(kind="storage.staging_delete_requested", document_id=document.pk,
                         payload={"staging_key": staging_key},
                         dedupe_key=f"staging-delete:{document.pk}:{previous_version}")
+    if state == Document.Status.FAILED:
+        # Earlier compensation may have been skipped while this key was still
+        # owned by PENDING. Terminal failure needs its own cleanup obligation,
+        # even when this attempt failed before opening the staged file.
+        enqueue_message(kind="storage.object_delete_requested", document_id=document.pk,
+                        payload={"object_key": document.object_key},
+                        dedupe_key=f"object-failed:{document.pk}:{previous_version}")
     if state == Document.Status.READY:
         transaction.on_commit(partial(notify_document, document.pk, "document.ready"))
 

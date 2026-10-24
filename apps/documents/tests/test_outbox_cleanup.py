@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -8,7 +9,7 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import InMemoryStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, OperationalError, transaction
-from django.test import TestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from PIL import Image
 
@@ -146,3 +147,75 @@ class OutboxCleanupTests(TestCase):
             OutboxMessage.objects.filter(pk=message.pk).update(available_at=timezone.now())
             relay_once()
             self.assertFalse(path.exists())
+
+    def assert_failed_upload_replaces_skipped_compensation(self, storage_attempts):
+        from ..outbox_uploads import process_outbox_upload, resolve_upload_message
+
+        with TemporaryDirectory() as directory, override_settings(DOCUMENT_STAGING_ROOT=directory):
+            Document.objects.filter(pk=self.document.pk).update(
+                status="PENDING", staging_key="c" * 32 + ".stage", storage_attempts=storage_attempts,
+            )
+            compensation = enqueue_message(
+                kind="storage.object_delete_requested", document_id=self.document.pk,
+                payload={"object_key": self.document.object_key}, dedupe_key="partial-put-compensation",
+            )
+            relay_once()
+            compensation.refresh_from_db()
+            self.assertEqual(compensation.status, "PUBLISHED")
+            self.assertTrue(self.storage.exists(self.document.object_key))
+
+            event = resolve_upload_message(document_id=self.document.pk, event_id=None)
+            process_outbox_upload(document_id=self.document.pk, event_id=event.pk)
+            self.document.refresh_from_db()
+            self.assertEqual(self.document.status, "FAILED")
+            self.assertEqual(DocumentAuditEvent.objects.filter(action="store", outcome="failure").count(), 1)
+            relay_once()
+            self.assertFalse(self.storage.exists(self.document.object_key))
+
+    def test_missing_staging_failure_cleans_partial_object_after_skipped_compensation(self):
+        self.assert_failed_upload_replaces_skipped_compensation(storage_attempts=1)
+
+    def test_exhausted_legacy_upload_cleans_partial_object_after_skipped_compensation(self):
+        self.assert_failed_upload_replaces_skipped_compensation(storage_attempts=4)
+
+
+@override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
+class OutboxAcceptanceCompensationTests(TransactionTestCase):
+    def test_committed_acceptance_preserves_staging_after_lost_commit_acknowledgement(self):
+        user = get_user_model().objects.create_user(username="outbox-commit-ack", role="editor")
+        image = BytesIO()
+        Image.new("RGB", (2, 2), "blue").save(image, format="PNG")
+        serializer = DocumentUploadSerializer(data={"title": "Accepted", "file": SimpleUploadedFile(
+            "private.png", image.getvalue(), content_type="image/png")})
+        serializer.is_valid(raise_exception=True)
+        atomic, depth = transaction.atomic, 0
+
+        @contextmanager
+        def commit_then_disconnect(*args, **kwargs):
+            nonlocal depth
+            depth += 1
+            try:
+                with atomic(*args, **kwargs):
+                    yield
+            finally:
+                depth -= 1
+            if depth == 0:
+                raise OperationalError("commit acknowledgement lost")
+
+        with TemporaryDirectory() as directory, override_settings(DOCUMENT_STAGING_ROOT=directory):
+            with patch("apps.documents.background.transaction.atomic", commit_then_disconnect):
+                with self.assertRaises(OperationalError):
+                    background.stage_document(title="Accepted", uploaded_file=serializer.validated_data["file"], creator=user)
+            document = Document.objects.get()
+            self.assertEqual(document.status, "PENDING")
+            self.assertTrue(OutboxMessage.objects.filter(document_id=document.pk, kind="document.upload_requested").exists())
+            self.assertEqual((Path(directory) / document.staging_key).read_bytes(), image.getvalue())
+
+    def test_immediate_staging_compensation_defers_when_ownership_lookup_is_unavailable(self):
+        with TemporaryDirectory() as directory, override_settings(DOCUMENT_STAGING_ROOT=directory):
+            key = "d" * 32 + ".stage"
+            path = Path(directory) / key
+            path.write_bytes(b"private")
+            with patch("apps.documents.background.Document.objects.filter", side_effect=OperationalError("private")):
+                self.assertFalse(background.delete_staged_file(key))
+            self.assertTrue(path.exists())
