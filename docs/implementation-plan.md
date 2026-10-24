@@ -107,7 +107,7 @@ Phase 1 has no dependency on T20–T23 and includes its own recovery/acceptance 
 
 - [x] T16: Add OutboxMessage/OutboxReceipt, migration and transactional enqueue/deduplication (288 tests and migration upgrade verified; branch review pending).
 - [x] T17: Add independent relay, upload/cleanup adapters, lease fencing, bounded retry, Compose service and basic status/DEAD replay (303 tests and relay lifecycle verified; branch review pending).
-- [ ] T18: Make upload acceptance/receipts/retries durable; retain PENDING/staging during broker failure; add periodic stale/legacy recovery.
+- [x] T18: Make upload acceptance/receipts/retries durable; retain PENDING/staging during broker failure; add periodic stale/legacy recovery (318 tests verified; branch review pending).
 - [ ] T19: Persist object/staging cleanup and safe compensation; pass core integration/full regression and document rollout/operator procedures.
 
 Existing WebSocket/cache callbacks remain best effort during Phase 1; audit

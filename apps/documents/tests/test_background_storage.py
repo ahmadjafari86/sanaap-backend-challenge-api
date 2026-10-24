@@ -11,10 +11,12 @@ from django.core.files.storage import FileSystemStorage, InMemoryStorage
 from django.db import IntegrityError, OperationalError, close_old_connections, connection, transaction
 from django.test import TestCase, TransactionTestCase, override_settings, skipUnlessDBFeature
 from django.test import SimpleTestCase
+from django.utils import timezone
 from PIL import Image
 from rest_framework.test import APITestCase
 
-from ..models import Document, DocumentAuditEvent
+from ..models import Document, DocumentAuditEvent, OutboxMessage, OutboxReceipt
+from .outbox_helpers import deliver_outbox_once
 from .. import background
 from ..serializers import DocumentUploadSerializer
 
@@ -122,8 +124,12 @@ class BackgroundWorkerTests(TestCase):
         return background.stage_document(title="Queued", uploaded_file=serializer.validated_data["file"], creator=self.editor)
 
     def process(self, document):
+        # Explicitly advance the next persisted attempt in these bounded unit tests.
+        OutboxMessage.objects.filter(document_id=document.pk, kind="document.upload_requested", status="PENDING").update(available_at=timezone.now())
         with self.captureOnCommitCallbacks(execute=True):
-            return background.process_staged_document(document.pk)
+            retry = background.process_staged_document(document.pk)
+        deliver_outbox_once()
+        return retry
 
     def test_worker_stores_exact_bytes_and_atomically_marks_ready_and_audits(self):
         document = self.accept()
@@ -201,20 +207,21 @@ class BackgroundWorkerTests(TestCase):
         self.assertFalse(self.storage.exists(document.object_key))
         self.assertEqual(DocumentAuditEvent.objects.filter(action="store").count(), 0)
 
-    def test_stage_is_kept_until_ready_transaction_commits(self):
+    def test_stage_is_kept_until_committed_cleanup_is_delivered(self):
         document = self.accept()
         stage = Path(self.directory.name) / document.staging_key
         with self.captureOnCommitCallbacks(execute=True):
             background.process_staged_document(document.pk)
             self.assertTrue(stage.exists())
+        self.assertTrue(stage.exists())
+        deliver_outbox_once()
         self.assertFalse(stage.exists())
 
-    def test_only_publish_after_acceptance_commit(self):
-        with patch("apps.documents.tasks.store_document.delay") as publish:
+    def test_acceptance_records_work_without_inline_publication(self):
+        with patch("apps.documents.tasks.store_document.delay", side_effect=AssertionError("must enqueue")):
             with self.captureOnCommitCallbacks(execute=True):
                 document = self.accept()
-                publish.assert_not_called()
-            publish.assert_called_once_with(document.pk)
+        self.assertEqual(OutboxMessage.objects.get(document_id=document.pk).status, "PENDING")
 
     def test_rollback_never_publishes_or_records_acceptance(self):
         with patch("apps.documents.tasks.store_document.delay") as publish:
@@ -226,15 +233,17 @@ class BackgroundWorkerTests(TestCase):
             publish.assert_not_called()
         self.assertFalse(Document.objects.exists())
         self.assertFalse(DocumentAuditEvent.objects.exists())
+        self.assertFalse(OutboxMessage.objects.exists())
 
-    def test_dispatch_failure_is_persisted_and_redacted_after_commit(self):
-        with patch("apps.documents.tasks.store_document.delay", side_effect=OSError("private-broker")), self.assertLogs("apps.documents.background", level="ERROR") as logs:
-            with self.captureOnCommitCallbacks(execute=True):
-                document = self.accept()
+    def test_dispatch_failure_retains_pending_stage_and_redacted_retry(self):
+        from ..outbox_delivery import relay_once
+        document = self.accept()
+        with patch("apps.documents.tasks.store_document.apply_async", side_effect=OSError("private-broker")), self.assertLogs("apps.documents.outbox_delivery", level="WARNING") as logs:
+            relay_once()
         document.refresh_from_db()
-        self.assertEqual(document.status, "FAILED")
-        self.assertEqual(list(Path(self.directory.name).iterdir()), [])
-        self.assertEqual(DocumentAuditEvent.objects.filter(action="store", outcome="failure").count(), 1)
+        self.assertEqual(document.status, "PENDING")
+        self.assertTrue((Path(self.directory.name) / document.staging_key).exists())
+        self.assertEqual(DocumentAuditEvent.objects.filter(action="store", outcome="failure").count(), 0)
         self.assertNotIn("private-broker", "\n".join(logs.output))
 
     def test_database_failure_during_acceptance_cleans_staging(self):
@@ -271,23 +280,30 @@ class BackgroundWorkerTests(TestCase):
         document.refresh_from_db()
         self.assertEqual(document.status, "READY")
 
-    def test_celery_retries_exhaust_at_four_persisted_attempts(self):
+    def test_each_celery_message_executes_one_persisted_attempt(self):
         from ..tasks import store_document
         document = self.accept()
         with patch.object(self.storage, "save", side_effect=OSError("private-error")), self.assertLogs("apps.documents.background", level="WARNING"):
-            with self.captureOnCommitCallbacks(execute=True):
-                store_document.apply(args=[document.pk], throw=False)
+            for number in range(1, 5):
+                event = OutboxMessage.objects.get(document_id=document.pk, payload={"attempt_number": number})
+                OutboxMessage.objects.filter(pk=event.pk).update(available_at=timezone.now())
+                with self.captureOnCommitCallbacks(execute=True):
+                    store_document.apply(args=[document.pk], kwargs={"event_id": str(event.pk)}, throw=True)
+                document.refresh_from_db()
+                self.assertEqual(document.storage_attempts, number)
+        deliver_outbox_once()
         document.refresh_from_db()
         self.assertEqual((document.status, document.storage_attempts), ("FAILED", 4))
 
-    def test_requeue_command_republishes_only_pending_ids(self):
+    def test_requeue_command_keeps_existing_work_without_broker_contact(self):
         from django.core.management import call_command
         document = self.accept()
         ready = self.accept()
         self.process(ready)
-        with patch("apps.documents.tasks.store_document.delay") as publish:
+        with patch("apps.documents.tasks.store_document.delay", side_effect=AssertionError("must enqueue")):
             call_command("requeue_pending_documents", stdout=StringIO())
-        publish.assert_called_once_with(document.pk)
+        self.assertEqual(OutboxMessage.objects.filter(document_id=document.pk, kind="document.upload_requested").count(), 1)
+        self.assertEqual(OutboxReceipt.objects.count(), 1)
 
     def test_unexpected_storage_error_marks_failed_with_redacted_logs(self):
         document = self.accept()
@@ -359,6 +375,7 @@ class ConcurrentBackgroundTests(TransactionTestCase):
                 release.set()
             first.result(timeout=20)
             second.result(timeout=20)
+            deliver_outbox_once()
 
     @skipUnlessDBFeature("has_select_for_update")
     def test_concurrent_deliveries_store_and_audit_once(self):

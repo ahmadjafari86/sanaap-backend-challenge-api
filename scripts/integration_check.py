@@ -311,12 +311,13 @@ def main():
         assert client.api("GET", detail, token=viewer)["title"] == "Integration image"
         client.api("PATCH", detail, token=editor, data={"title": "Redis outage update"})
         assert client.api("GET", detail, token=viewer)["title"] == "Redis outage update"
-        broker_failed = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Broker outage"}, image=original, expected=202)
-        client.wait_document(broker_failed, editor, state="FAILED")
-        broker_detail = f"/api/v1/documents/{broker_failed['id']}/"
+        broker_pending = client.api("POST", "/api/v1/documents/", token=editor, data={"title": "Broker outage"}, image=original, expected=202)
+        assert client.api("GET", f"/api/v1/documents/{broker_pending['id']}/", token=editor)["status"] == "PENDING"
+        broker_detail = f"/api/v1/documents/{broker_pending['id']}/"
         client.api("GET", broker_detail + "download/", token=viewer, expected=409)
-        client.api("DELETE", broker_detail, token=admin["access"], expected=204)
         run(compose + ["up", "-d", "--no-deps", "--wait", "redis"])
+        client.wait_document(broker_pending, editor)
+        client.api("DELETE", broker_detail, token=admin["access"], expected=204)
         assert client.api("GET", detail, token=viewer)["title"] == "Redis outage update"
         for role, pair in tokens.items():
             sockets.command("close", name=role)
@@ -439,18 +440,18 @@ def main():
             for role in ("admin", "editor", "viewer")
         ] + [
             ["integration-editor", "store", document_id, "success", 200]
-            for document_id in (document["id"], second["id"], orphan["id"], boundary_id)
+            for document_id in (document["id"], second["id"], orphan["id"], boundary_id, broker_pending["id"])
         ] + [
             ["integration-editor", "create", row["id"], "success", 202]
-            for row in (broker_failed, failed)
+            for row in (broker_pending, failed)
         ] + [
             ["integration-editor", "store", row["id"], "failure", 503]
-            for row in (broker_failed, failed)
+            for row in (failed,)
         ] + [
             ["integration-admin", "delete", row["id"], "success", 204]
-            for row in (broker_failed, failed)
+            for row in (broker_pending, failed)
         ] + [
-            ["integration-viewer", "download_url", broker_failed["id"], "failure", 409],
+            ["integration-viewer", "download_url", broker_pending["id"], "failure", 409],
         ]
         shell(
             "import json, sys; from collections import Counter; from django.contrib.auth import get_user_model; "

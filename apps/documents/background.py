@@ -15,6 +15,7 @@ from .audit import record_document_event
 from .caching import invalidate_document_metadata
 from .models import Document, DocumentAuditEvent
 from .notifications import notify_document
+from .outbox import enqueue_message
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,8 @@ def stage_document(*, title, uploaded_file, creator):
             )
             record_document_event(actor_id=creator.pk, action=DocumentAuditEvent.Action.CREATE,
                                   document_id=document.pk, outcome=DocumentAuditEvent.Outcome.SUCCESS, status_code=202)
-            transaction.on_commit(partial(publish_document, document.pk))
+            enqueue_message(kind="document.upload_requested", document_id=document.pk,
+                            payload={"attempt_number": 1}, dedupe_key=f"upload:{document.pk}:1")
         return document
     except Exception:
         delete_staged_file(staging_key)
@@ -65,68 +67,61 @@ def transition_document(document, state):
         status_code=200 if state == Document.Status.READY else 503,
     )
     transaction.on_commit(partial(invalidate_document_metadata, document.pk, previous_version))
-    transaction.on_commit(partial(delete_staged_file, staging_key))
+    if re.fullmatch(r"[0-9a-f]{32}\.stage", staging_key):
+        enqueue_message(kind="storage.staging_delete_requested", document_id=document.pk,
+                        payload={"staging_key": staging_key},
+                        dedupe_key=f"staging-delete:{document.pk}:{previous_version}")
     if state == Document.Status.READY:
         transaction.on_commit(partial(notify_document, document.pk, "document.ready"))
 
 
 def publish_document(document_id):
-    from .tasks import store_document
+    """Compatibility entry point: ensure an obligation, never publish inline."""
+    from .outbox_uploads import resolve_upload_message
     try:
-        store_document.delay(document_id)
-        return True
+        return resolve_upload_message(document_id=document_id, event_id=None) is not None
     except Exception as error:
-        logger.error("Document task publication failed (%s).", type(error).__name__)
-        try:
-            with transaction.atomic():
-                document = Document.objects.select_for_update().filter(pk=document_id).first()
-                if document is not None and document.status == Document.Status.PENDING:
-                    transition_document(document, Document.Status.FAILED)
-        except Exception as failure:
-            logger.error("Document dispatch failure could not be persisted (%s).", type(failure).__name__)
+        logger.error("Document obligation could not be persisted (%s).", type(error).__name__)
         return False
 
 
 def process_staged_document(document_id):
-    """Serialize one attempt; return whether a transient failure needs retry."""
+    """Compatibility wrapper; the outbox owns timing and deduplication."""
+    from .outbox_uploads import _process_upload, resolve_upload_message
+    message = resolve_upload_message(document_id=document_id, event_id=None)
+    return _process_upload(document_id=document_id, event_id=message.pk) if message else False
+
+
+def _process_staged_document_attempt(document):
+    """One bounded attempt; caller owns the event/document transaction and locks."""
     from .services import _delete_document_object, default_storage
     attempted_key = None
-    try:
-        with transaction.atomic():
-            document = Document.objects.select_for_update().filter(pk=document_id).first()
-            if document is None or document.status != Document.Status.PENDING:
-                return False
-            if document.storage_attempts >= 4:
-                transition_document(document, Document.Status.FAILED)
-                return False
-            document.storage_attempts += 1
-            try:
-                if not re.fullmatch(r"[0-9a-f]{32}\.stage", document.staging_key):
-                    raise FileNotFoundError("Invalid staging identifier")
-                with staging_storage().open(document.staging_key, "rb") as content:
-                    content.content_type = document.content_type
-                    attempted_key = document.object_key
-                    stored_key = default_storage.save(document.object_key, content)
-                    if stored_key != document.object_key:
-                        _delete_document_object(stored_key)
-                        raise OSError("Storage changed the stable object key")
-            except Exception as error:
-                if attempted_key is not None:
-                    _delete_document_object(attempted_key)
-                    attempted_key = None
-                logger.warning("Background document storage failed (%s).", type(error).__name__)
-                transient = isinstance(error, (OSError, MinioException, HTTPError)) and not isinstance(error, FileNotFoundError)
-                if not transient or document.storage_attempts >= 4:
-                    transition_document(document, Document.Status.FAILED)
-                    return False
-                document.save(update_fields=["storage_attempts"])
-                return True
-            transition_document(document, Document.Status.READY)
+    if document.storage_attempts >= 4:
+        transition_document(document, Document.Status.FAILED)
         return False
-    except Exception:
+    document.storage_attempts += 1
+    try:
+        if not re.fullmatch(r"[0-9a-f]{32}\.stage", document.staging_key):
+            raise FileNotFoundError("Invalid staging identifier")
+        with staging_storage().open(document.staging_key, "rb") as content:
+            content.content_type = document.content_type
+            attempted_key = document.object_key
+            stored_key = default_storage.save(document.object_key, content)
+            if stored_key != document.object_key:
+                _delete_document_object(stored_key)
+                raise OSError("Storage changed the stable object key")
+    except Exception as error:
         if attempted_key is not None:
-            _compensate_attempt(document_id, attempted_key)
-        raise
+            _delete_document_object(attempted_key)
+        logger.warning("Background document storage failed (%s).", type(error).__name__)
+        transient = isinstance(error, (OSError, MinioException, HTTPError)) and not isinstance(error, FileNotFoundError)
+        if not transient or document.storage_attempts >= 4:
+            transition_document(document, Document.Status.FAILED)
+            return False
+        document.save(update_fields=["storage_attempts"])
+        return True
+    transition_document(document, Document.Status.READY)
+    return False
 
 
 def _compensate_attempt(document_id, object_key):

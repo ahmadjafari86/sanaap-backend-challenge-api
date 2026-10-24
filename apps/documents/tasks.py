@@ -3,15 +3,15 @@
 from celery import shared_task
 from django.db import DatabaseError
 
-from .background import process_staged_document
+from .outbox_uploads import process_outbox_upload, resolve_upload_message
 
 
-@shared_task(bind=True, acks_late=True, reject_on_worker_lost=True, max_retries=3, ignore_result=True)
-def store_document(self, document_id):
+@shared_task(acks_late=True, reject_on_worker_lost=True, ignore_result=True)
+def store_document(document_id, event_id=None):
     try:
-        retry = process_staged_document(document_id)
+        message = resolve_upload_message(document_id=document_id, event_id=event_id)
+        if message is not None:
+            process_outbox_upload(document_id=document_id, event_id=message.pk)
     except DatabaseError:
-        # Keep database/connection exception details out of Celery retry logs.
-        raise self.retry(exc=RuntimeError("Document database temporarily unavailable"), countdown=2) from None
-    if retry:
-        raise self.retry(countdown=min(2 ** self.request.retries, 8))
+        # Recovery re-arms the unreceipted event; no unrecorded retry publication.
+        raise RuntimeError("Document database temporarily unavailable") from None

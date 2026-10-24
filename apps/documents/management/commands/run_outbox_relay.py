@@ -6,8 +6,10 @@ import time
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DatabaseError, close_old_connections
+from django.utils import timezone
 
 from apps.documents.outbox_delivery import relay_once
+from apps.documents.outbox_recovery import recover_uploads
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +30,13 @@ class Command(BaseCommand):
             nonlocal stopping
             stopping = True
         previous = signal.signal(signal.SIGTERM, stop)
+        last_recovery = float("-inf")
         try:
             while not stopping:
                 try:
+                    if time.monotonic() - last_recovery >= settings.OUTBOX_RECOVERY_INTERVAL_SECONDS:
+                        recover_uploads(now=timezone.now(), limit=100)
+                        last_recovery = time.monotonic()
                     count = relay_once(batch_size=options["batch_size"])
                     Path(settings.OUTBOX_RELAY_HEARTBEAT_FILE).write_text(str(time.time()))
                 except DatabaseError:

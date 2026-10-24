@@ -225,7 +225,7 @@ deletion is best effort and does not change its success status. Initial database
 outages on list/detail/user queries can still produce a standard server error;
 Redis fallback does not make PostgreSQL optional. A staging/database failure
 before acceptance returns 503 without a new document. Once accepted, broker
-publication or exhausted worker storage failures produce a FAILED document;
+publication failures retain PENDING work; exhausted storage failures produce FAILED;
 the original acceptance remains 202 rather than a completed-upload guarantee.
 
 Run the regression, migration, and OpenAPI checks:
@@ -495,34 +495,38 @@ DB 1 is the JSON-only Celery broker. Redis uses AOF in `redis_data`; no Celery
 result backend is used, because the document row is the authoritative state.
 Native runs can set `CELERY_BROKER_URL` and `DOCUMENT_STAGING_ROOT`.
 
-Transient storage errors receive at most **four persisted attempts** with bounded
-retry delays. Missing staged files and unexpected storage errors fail immediately.
-Terminal outcomes clean staging after commit and rotate the metadata cache version.
-Celery acknowledges after processing and requeues on worker-process loss. Uploads
-use bounded connect/read timeouts; broker publication does not retry indefinitely.
-Database-unavailable task retries are bounded separately; if a terminal state
-cannot be recorded, the row may remain PENDING for operator recovery.
+Upload acceptance commits the document, acceptance audit and its first upload
+obligation atomically. Transient storage errors receive at most **four persisted
+logical attempts**. Each attempt commits a unique processing receipt with either
+the next delayed outbox message or a terminal state/audit and staging-cleanup
+message. Missing staged files and unexpected storage errors fail immediately.
+READY/FAILED rotate the metadata cache version; existing cache/notification
+callbacks remain best effort in Phase 1. Staging is removed by the relay after
+commit. Celery acknowledges late and requeues on worker-process loss.
 
-Publishing after commit is not a transactional outbox: a crash in the commit-to-
-publish gap, broker data loss, or an interrupted retry publication may leave a
-PENDING row. After restoring Redis/worker/database availability, republish these
-rows explicitly (duplicate messages are safe):
+PUBLISHED means destination acceptance, not completed processing. Every 60
+seconds the independent relay recovers upload publications older than 300
+seconds without a receipt and seeds legacy PENDING rows without work. These
+defaults are configured by `OUTBOX_RECOVERY_INTERVAL_SECONDS` and
+`OUTBOX_UPLOAD_STALE_SECONDS`. Recovery reuses logical event identity and does
+not reset the storage-attempt budget. Uncommitted/interrupted attempts can safely
+repeat under the stable object key. Manual recovery uses the same bounded path:
 
 ```bash
-docker compose exec backend python manage.py requeue_pending_documents
+docker compose exec backend python manage.py recover_outbox_uploads --dry-run
+docker compose exec backend python manage.py recover_outbox_uploads --limit 100
 docker compose logs --tail=100 worker
 ```
 
-The command touches only PENDING rows. FAILED rows stay terminal: delete/re-upload
-after correcting the cause. If publication fails, the accepted row is marked
-FAILED with a redacted storage-failure audit, and staging cleanup is attempted.
-The response object can still say PENDING while a following detail read already
-reports FAILED or READY. A process crash/outer rollback between staging and commit,
-or failure/crash before cleanup, can leave private staged or object orphans;
-automatic reconciliation and exactly-once transport are not provided. Disk use
-must be monitored when workers are stopped. A killed attempt can be redelivered
-without its uncommitted attempt counter; the four-attempt limit bounds recorded
-failures, not repeated forced process termination.
+`requeue_pending_documents` remains an alias for durable recovery; it no longer
+publishes directly. Recovery preserves FAILED/deleted documents and leaves DEAD
+messages for explicit operator replay. Broker failures keep accepted documents
+PENDING and retain staged bytes; they do not create false storage-failure audits.
+The 202 response can still say PENDING while a later read already reports READY
+or a genuine storage FAILED outcome. A crash before recording a filesystem/MinIO
+write can still leave an orphan. Automatic orphan deletion and exactly-once
+external I/O are not provided. Monitor staging disk and queue growth; Phase 1
+retains message/receipt history until later maintenance tooling is introduced.
 
 Celery behavior references: [Django transaction dispatch](https://docs.celeryq.dev/en/stable/django/first-steps-with-django.html#trigger-tasks-at-the-end-of-the-database-transaction),
 [idempotence and late acknowledgements](https://docs.celeryq.dev/en/stable/userguide/tasks.html),
