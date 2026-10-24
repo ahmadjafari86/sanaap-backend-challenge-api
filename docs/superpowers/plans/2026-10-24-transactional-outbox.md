@@ -16,15 +16,16 @@ MinIO, Docker Compose and Django's unittest runner.
 
 **Spec:** [2026-10-24-transactional-outbox-design.md](../specs/2026-10-24-transactional-outbox-design.md).
 
-**Status:** The user requested two phases. Phase 1 (T16–T19) is the next
-implementation scope and is in progress; Phase 2 (T20–T23) is deferred.
+**Status:** Phase 1 (T16–T19) is implemented and verified on
+`codex/transactional-outbox-phase1`; user review of the unmerged branch is pending.
+Independent review findings are fixed. Phase 2 (T20–T23) remains deferred.
 T16–T23 extend [the project queue](../../tasks.md).
 
 ## Delivery Phases
 
 | Phase | Tasks | Independently deliverable result | Status |
 | --- | --- | --- | --- |
-| 1 | T16–T19 | Durable uploads and cleanup, basic status/replay, automatic upload recovery, core integration and rollout docs | Next for implementation |
+| 1 | T16–T19 | Durable uploads and cleanup, basic status/replay, automatic upload recovery, core integration and rollout docs | Implemented; 334 tests and rebuilt core integration pass; user review pending |
 | 2 | T20–T23 | Durable notifications/cache invalidation, advanced operations and whole-scope verification | Deferred until Phase 1 review |
 
 Phase 1 has no dependency on T20–T23. Move basic status/replay from T22 to T17,
@@ -52,9 +53,9 @@ do not produce their outbox messages or implement their adapters before Phase 2.
 - Payloads/logs must not contain file bytes, JWTs, credentials, presigned URLs,
   document titles or original filenames. No cascading document FK on messages.
 - Delivery to Channels is not client receipt; duplicates/delay are allowed.
-- Implement and verify one task, then use the existing shared user-review
-  checkpoint before the next. Start implementation on an isolated feature branch
-  from updated `develop`; planning edits do not authorize merges or releases.
+- Implement and verify the requested Phase 1 batch with per-task checkpoint
+  commits and one final independent branch review. Shared user review remains a
+  final branch checkpoint; tests do not imply merge or release permission.
 - T19 is the Phase 1 acceptance gate: core integration, regression, recovery and
   rollout evidence are required before the phase is called complete.
 - User branch constraint: implement Phase 1 on `codex/transactional-outbox-phase1`
@@ -117,7 +118,7 @@ verification must not wait for T23.
 
 ---
 
-## Phase 1 — Uploads and Cleanup (Next)
+## Phase 1 — Uploads and Cleanup (Implemented)
 
 ### T16: Data Model and Transactional Enqueue
 
@@ -133,21 +134,22 @@ payloads and dedupe mismatch behavior are defined in the spec.
 Reserve the Phase 2 schema kinds if useful, but activate only the three Phase 1
 destinations. No cache/notification writer or adapter is required by this task.
 
-- [ ] Add failing tests `test_mutation_and_message_rollback_together`,
+- [x] Add failing tests `test_mutation_and_message_rollback_together`,
   `test_identical_dedupe_returns_same_event`, `test_dedupe_content_mismatch_fails`,
   `test_document_deletion_preserves_message`, and
   `test_unknown_kind_version_or_private_payload_rejected` with the spec's exact
   allowed fields and version 1. Test unique receipt event IDs and claim indexes.
-- [ ] Run `python manage.py test apps.documents.tests.test_outbox_models --noinput`
-  in the rebuilt test container; confirm failures name the missing model/helper.
-- [ ] Add the additive migration and enqueue validation. Enqueue database errors
+- [x] Run `python manage.py test apps.documents.tests.test_outbox_models --noinput`
+  with isolated PostgreSQL; confirm failures name the missing model/helper.
+  Verify the full suite again in the rebuilt final image.
+- [x] Add the additive migration and enqueue validation. Enqueue database errors
   must propagate; use a savepoint for a concurrent dedupe-key race rather than
   leaving the caller's transaction broken. Test rollback after conflicting enqueue.
-- [ ] Rerun focused tests plus `python manage.py makemigrations --check --dry-run`;
+- [x] Rerun focused tests plus `python manage.py makemigrations --check --dry-run`;
   verify fresh migration and upgrade from documents migration 0004 without changing
   existing document/audit rows.
-- [ ] Present this deliverable for shared review, then commit the reviewed scope
-  as `feat: add transactional document outbox models`.
+- [x] Commit as `feat: add transactional document outbox models`; retain the
+  combined Phase 1 branch for shared user review.
 
 ### T17: Independent Relay, Retry and Basic Operations
 
@@ -175,31 +177,31 @@ Also produces `get_outbox_status(*, now: datetime) -> dict` and
 receipts, resets publication retry scheduling, and never changes document state
 or storage attempts. State counts, oldest work age and expired leases are visible.
 
-- [ ] Add failing `TransactionTestCase` coverage for two concurrent PostgreSQL
+- [x] Add failing `TransactionTestCase` coverage for two concurrent PostgreSQL
   claimants, rollback invisibility, expired leases and stale-token finalization.
   Add deterministic-clock/jitter cases for 2-second base, 300-second cap,
   0–20% jitter, DEAD after 20 publication attempts, malformed payload DEAD,
   and publication success followed by failure to record its result.
   Add tests for basic status and explicit replay, rejecting active/non-DEAD rows
   and preserving document attempt budgets/receipts during concurrent replay.
-- [ ] Run `python manage.py test apps.documents.tests.test_outbox_delivery apps.documents.tests.test_outbox_operations --noinput`;
+- [x] Run `python manage.py test apps.documents.tests.test_outbox_delivery apps.documents.tests.test_outbox_operations --noinput`;
   confirm missing implementation failures using PostgreSQL, not SQLite.
-- [ ] Implement short claim/finalization transactions, I/O outside DB locks,
+- [x] Implement short claim/finalization transactions, I/O outside DB locks,
   conditional token updates, strict adapters for upload/object-delete/staging-delete,
   and bounded external calls. Missing files succeed; errors propagate with only
   sanitized codes persisted. Celery task UUID is tracing, not deduplication.
-- [ ] Implement bounded status output and explicit DEAD replay commands; redact
+- [x] Implement bounded status output and explicit DEAD replay commands; redact
   payloads and private exception details. Notification/cache adapters wait for
   T20/T21. Update README with the initial relay/status/replay command examples.
-- [ ] Add relay command/Compose service, poll/batch/lease/retry settings and loop
+- [x] Add relay command/Compose service, poll/batch/lease/retry settings and loop
   heartbeat. Support `--once`, SIGTERM and database reconnect/backoff. Relay startup
   waits for migrations; its loop survives Redis/MinIO outages. Add the seventh
   service to disposable image/env configuration and exact service allowlists.
-- [ ] Verify focused tests, `docker compose config --quiet`, independent
+- [x] Verify focused tests, `docker compose config --quiet`, independent
   empty-queue startup/shutdown, health checks and no published relay ports.
   Assert another transaction can acquire an event lock while its handler blocks.
-- [ ] Present evidence for shared review, then commit as
-  `feat: add independent outbox relay and retry delivery`.
+- [x] Commit as `feat: add independent outbox relay and retry delivery`; retain
+  the combined Phase 1 branch for shared user review.
 
 ### T18: Upload Attempts, Receipts and Automatic Recovery
 
@@ -223,40 +225,40 @@ Produces `recover_uploads(*, now: datetime, limit: int, dry_run: bool = False) -
 in `outbox_recovery.py`, used by both recovery commands and the relay's periodic
 scan. Recovery is part of Phase 1, not a dependency on T22.
 
-- [ ] Add failing tests for 202/PENDING plus retained staging with Redis down;
+- [x] Add failing tests for 202/PENDING plus retained staging with Redis down;
   atomic acceptance audit/upload event; duplicate UUID and legacy delivery;
   worker completion before relay finalization; and DB rollback after MinIO I/O.
   Assert one logical attempt/audit/follow-up set, including after redelivery.
-- [ ] Add transient-attempt tests: a receipt and attempt 2 message commit together
+- [x] Add transient-attempt tests: a receipt and attempt 2 message commit together
   after attempt 1; four persisted failures produce FAILED, one store-failure
   audit and cleanup; missing staging fails terminally. Broker/DB failure alone
   does not consume the persisted storage budget. Future/obsolete attempts do
   not run early or duplicate an already receipted attempt.
-- [ ] Add recovery tests for publication older than 300 seconds without a receipt,
+- [x] Add recovery tests for publication older than 300 seconds without a receipt,
   Redis losing a published task, legacy PENDING rows, concurrent worker/recovery,
   completed receipt before publisher finalization and periodic scans while Redis
   is unavailable. Reuse the logical attempt/UUID without resetting storage attempts;
   terminal/deleted documents never return to PENDING. Dry-run makes no changes.
-- [ ] Run `python manage.py test apps.documents.tests.test_outbox_uploads apps.documents.tests.test_outbox_recovery apps.documents.tests.test_background_storage --noinput`
+- [x] Run `python manage.py test apps.documents.tests.test_outbox_uploads apps.documents.tests.test_outbox_recovery apps.documents.tests.test_background_storage --noinput`
   and record the expected pre-change failures.
-- [ ] Replace required `.delay`/`on_commit` acceptance publication with enqueue;
+- [x] Replace required `.delay`/`on_commit` acceptance publication with enqueue;
   lock event then document, check receipt/attempt, and write receipts with state,
   audit and cleanup messages. Use the strict T17 cleanup adapters. Retain existing
   best-effort after-commit cache/notification callbacks until T20/T21. Schedule
   transient storage retries as new uniquely keyed outbox events, not an unrecorded
   Celery `self.retry` chain. Inject audit/enqueue/receipt failures and verify full
   rollback together; audit consistency is required already in Phase 1.
-- [ ] Implement stale-publication recovery and legacy seeding with the worker's
+- [x] Implement stale-publication recovery and legacy seeding with the worker's
   lock order. Run recovery every 60 seconds in the independent relay; wire manual
   commands to the same bounded function and make the old requeue command delegate
   without calling `.delay`. Include basic recovery/legacy rollout instructions.
-- [ ] Rerun focused/API tests; verify exact uploaded bytes, stable object-key
+- [x] Rerun focused/API tests; verify exact uploaded bytes, stable object-key
   compensation, terminal/deleted no-ops and old message compatibility. Extend
   the existing broker-outage integration expectation and corresponding audit
   fixtures to PENDING/recovery now, so later gates do not preserve obsolete FAILED
   behavior. Preserve current WebSocket and versioned-cache regressions.
-- [ ] Present evidence for shared review, then commit as
-  `feat: make document upload attempts durable and idempotent`.
+- [x] Commit as `feat: make document upload attempts durable and idempotent`;
+  retain the combined Phase 1 branch for shared user review.
 
 ### T19: Durable Cleanup and Phase 1 Acceptance
 
@@ -277,39 +279,39 @@ in `scripts/outbox_checks.py`. The `core` profile covers only Phase 1 and calls
 the existing harness's private/safe helpers; T23 adds the `full` profile. No Phase
 2 module, adapter, command or test is required to deliver the core profile.
 
-- [ ] Add failing tests for delete/replacement commit followed by relay crash,
+- [x] Add failing tests for delete/replacement commit followed by relay crash,
   MinIO outage/recovery, staging outage/recovery, missing-file success and duplicate
   deletion. Assert cleanup messages survive the document row and terminal clearing
   of `staging_key`; rollback preserves referenced objects and emits no cleanup.
-- [ ] Add races for replacement vs delete and failed-worker compensation vs a
+- [x] Add races for replacement vs delete and failed-worker compensation vs a
   duplicate worker's committed READY object. Assert a currently owned key is
   never scheduled/deleted as compensation. Reordered cleanup targets only the
   exact historical key and cannot affect the newest replacement.
-- [ ] Run `python manage.py test apps.documents.tests.test_outbox_cleanup apps.documents.tests.test_delete_api apps.documents.tests.test_update_api --noinput`;
+- [x] Run `python manage.py test apps.documents.tests.test_outbox_cleanup apps.documents.tests.test_delete_api apps.documents.tests.test_update_api --noinput`;
   confirm the missing durable-obligation behavior fails before changes.
-- [ ] Enqueue committed cleanup atomically in all service/state paths. Preserve
+- [x] Enqueue committed cleanup atomically in all service/state paths. Preserve
   ownership rechecks and persist compensating cleanup in a separate transaction
   only when ownership is established; preserve/log uncertainty during DB outage.
   Upload before database reference remains a documented orphan window.
-- [ ] Rerun focused and background-storage tests; prove 204/200 responses remain
+- [x] Rerun focused and background-storage tests; prove 204/200 responses remain
   committed while cleanup retries, and no swallowed error marks a message delivered.
-- [ ] Add core disposable integration checks for seven-service startup, relay
+- [x] Add core disposable integration checks for seven-service startup, relay
   stop/restart, send-before-finalization crash, concurrent claims, broker outage,
   Redis message loss, worker loss, MinIO cleanup outage/recovery and operator
   status/replay. Extend exact audit expectations and keep all existing API,
   permissions, private-file bytes/expiry, proxy, WebSocket and cache regressions.
-- [ ] Rehearse additive upgrade from migration 0004 with legacy READY/PENDING
+- [x] Rehearse additive upgrade from migration 0004 with legacy READY/PENDING
   rows and queued old tasks. Document migrations-before-writers, relay activation,
   legacy recovery, preserved staging, DEAD replay and drain/inspection before
   binary rollback. Do not drop the schema while obligations remain.
-- [ ] Run `make test`, `make check`,
-  `docker compose exec -T backend python manage.py spectacular --validate --fail-on-warn --file /tmp/openapi.yaml`,
-  and `make integration` with rebuilt current images and the `core` profile.
+- [x] Run the `make test`/`make check` command equivalents in the disposable
+  Compose project, warning-free `spectacular --validate --fail-on-warn`, and the
+  integration entry point with rebuilt current images and the `core` profile.
   Require passing full regression, no migration/schema warnings, recovery or
   explicit DEAD status in new fault scenarios, and preserved existing volumes.
   Record actual evidence and Phase 1 limits in operator/release docs now.
-- [ ] Present evidence for shared review, then commit as
-  `feat: deliver durable document uploads and cleanup`. T19 is the Phase 1 gate;
+- [x] Commit durable cleanup/core checks and final evidence; retain the combined
+  Phase 1 branch for shared user review. T19 is the Phase 1 gate;
   do not wait for T23 to run these checks or claim Phase 1 completion prematurely.
 
 ## Phase 2 — Remaining Side Effects and Operations (Deferred)

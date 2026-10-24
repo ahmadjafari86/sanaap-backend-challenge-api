@@ -94,21 +94,22 @@
 - [x] Verify continuous `make logs`, optional service selection and MinIO login instructions.
 - [x] Pass 279 PostgreSQL tests, independent review and disposable real-service integration.
 
-## 8. Planned Transactional Outbox Extension (T16–T23)
+## 8. Transactional Outbox Extension (T16–T23)
 
 The user requested two phases, delivering the essential upload/cleanup scope first.
-Detailed proposed design and acceptance criteria are in the
+Detailed design and acceptance criteria are in the
 [Outbox design](superpowers/specs/2026-10-24-transactional-outbox-design.md) and
 [implementation plan](superpowers/plans/2026-10-24-transactional-outbox.md).
-Phase 1 implementation is in progress on its feature branch; branch review is pending.
+Phase 1 is implemented and verified on `codex/transactional-outbox-phase1`.
+Independent review findings are fixed; user review of the unmerged branch is pending.
 Phase 1 has no dependency on T20–T23 and includes its own recovery/acceptance gate.
 
-### Phase 1 — Uploads and Cleanup (Next)
+### Phase 1 — Uploads and Cleanup (Implemented)
 
-- [x] T16: Add OutboxMessage/OutboxReceipt, migration and transactional enqueue/deduplication (288 tests and migration upgrade verified; branch review pending).
-- [x] T17: Add independent relay, upload/cleanup adapters, lease fencing, bounded retry, Compose service and basic status/DEAD replay (303 tests and relay lifecycle verified; branch review pending).
-- [x] T18: Make upload acceptance/receipts/retries durable; retain PENDING/staging during broker failure; add periodic stale/legacy recovery (318 tests verified; branch review pending).
-- [ ] T19: Persist object/staging cleanup and safe compensation; pass core integration/full regression and document rollout/operator procedures.
+- [x] T16: Add OutboxMessage/OutboxReceipt, migration and transactional enqueue/deduplication; fresh/0004 upgrade verified.
+- [x] T17: Add independent relay, upload/cleanup adapters, lease fencing, bounded retry, Compose service and basic status/DEAD replay; concurrent relay/lifecycle checks pass.
+- [x] T18: Make upload acceptance/receipts/retries durable; retain PENDING/staging during broker failure; periodic stale/legacy recovery passes real broker-loss/duplicate-delivery checks.
+- [x] T19: Persist object/staging cleanup and safe compensation; 334 PostgreSQL tests, seven-service core integration, migration/schema/proxy checks and rollout/operator docs pass. Two Important independent-review findings have RED→GREEN regressions; no unresolved findings. User branch review remains pending.
 
 Existing WebSocket/cache callbacks remain best effort during Phase 1; audit
 remains transactional. Move basic operations from T22 to T17, recovery from T22

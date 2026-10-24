@@ -3,7 +3,10 @@
 **Source of requirements:** [design.md](design.md).
 **Progress checklist:** [implementation-plan.md](implementation-plan.md).
 **Planned Outbox extension:** [design](superpowers/specs/2026-10-24-transactional-outbox-design.md) and [T16–T23 implementation plan](superpowers/plans/2026-10-24-transactional-outbox.md).
-**Execution:** Implement one task, verify it, and review it with the user before starting the next task. A passing test run does not replace shared review.
+**Execution:** Phase 1 is a verified batch on the requested feature branch, with
+per-task commits and one independent whole-branch review. Shared user review
+of the unmerged result remains pending. Historical task review records below
+remain unchanged; passing tests do not imply user approval or merge permission.
 
 ## Git Flow
 
@@ -41,10 +44,10 @@
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Completed; reviewed by user; merged into develop |
 | T14 | Final regression checks and Git Flow release | Delivery | Completed; reviewed by user; v0.1.0 tagged and merged back into develop |
 | T15 | Django admin, test packages and development commands | Maintenance | Completed; design approved; 279 tests and real-service integration verified |
-| T16 | Outbox models and transactional enqueue | Phase 1 — Reliability | Implemented; 288 tests and fresh/0004 upgrade verified; branch review pending |
-| T17 | Independent relay, retry, leases and basic status/replay | Phase 1 — Reliability | Implemented; 303 tests, Compose and relay lifecycle verified; branch review pending |
-| T18 | Durable uploads, receipts, storage retries and automatic recovery | Phase 1 — Reliability | Implemented; 318 PostgreSQL tests verified; branch review pending |
-| T19 | Durable cleanup, core integration and rollout acceptance | Phase 1 — Delivery | Implemented; 330 tests verified; live integration and branch review in progress |
+| T16 | Outbox models and transactional enqueue | Phase 1 — Reliability | Implemented; fresh/0004 upgrade verified; user branch review pending |
+| T17 | Independent relay, retry, leases and basic status/replay | Phase 1 — Reliability | Implemented; concurrent relays, Compose and lifecycle verified; user branch review pending |
+| T18 | Durable uploads, receipts, storage retries and automatic recovery | Phase 1 — Reliability | Implemented; actual lost/duplicate broker tasks and legacy recovery verified; user branch review pending |
+| T19 | Durable cleanup, core integration and rollout acceptance | Phase 1 — Delivery | Implemented; 334 PostgreSQL tests and real-service core integration pass; independent findings fixed; user branch review pending |
 | T20 | Durable WebSocket notification publication | Phase 2 — Reliability | Deferred; after reviewed Phase 1 |
 | T21 | Cache invalidation and expanded audit consistency checks | Phase 2 — Reliability | Deferred; depends on T16–T20 |
 | T22 | Advanced operations, retention and orphan reports | Phase 2 — Operations | Deferred; depends on T16–T21 |
@@ -53,12 +56,12 @@
 ## Transactional Outbox — T16–T23
 
 The user requested two phases so the essential work can be delivered first.
-Phase 1 (T16–T19) is the next implementation scope; Phase 2 (T20–T23) is deferred.
-Phase 1 is in progress; verified task implementations remain pending branch review.
-Phase 2 remains deferred.
-No new release/merge is authorized by this planning update.
+Phase 1 (T16–T19) is implemented and verified; Phase 2 (T20–T23) is deferred.
+Independent review found two Important compensation issues, both fixed with
+failing regressions first. User review of the feature branch remains pending.
+No merge, push, tag or release was performed.
 
-### Phase 1 — Uploads and Cleanup (Next)
+### Phase 1 — Uploads and Cleanup (Implemented)
 
 | Task | Acceptance checkpoint |
 | --- | --- |

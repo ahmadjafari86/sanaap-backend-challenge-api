@@ -108,7 +108,7 @@ Do not include credentials or presigned download URLs in messages.
 2. Add audit logging and deployment configuration.
 3. Add background storage and WebSocket notifications if time permits.
 
-## Planned Transactional Outbox Extension
+## Transactional Outbox Extension
 
 The user requested two phases. Phase 1 (T16–T19) delivers uploads, object/staging
 cleanup, basic status/replay, automatic upload recovery and its own integration/
@@ -117,9 +117,10 @@ invalidation, advanced operations and whole-scope verification. Audit remains
 transactional from Phase 1; WebSocket/cache callbacks retain their existing
 best-effort behavior until Phase 2.
 
-The proposed approach retains PostgreSQL/Celery/Redis and adds a durable outbox
+The implementation retains PostgreSQL/Celery/Redis and adds a durable outbox
 with an independent polling relay. Detailed boundaries are in the
-[Outbox proposal](superpowers/specs/2026-10-24-transactional-outbox-design.md);
+[Outbox design](superpowers/specs/2026-10-24-transactional-outbox-design.md);
 [T16–T23](superpowers/plans/2026-10-24-transactional-outbox.md) define implementation
-and acceptance checkpoints. Phase 1 is next and independently deliverable; Phase
-2 is deferred until its review checkpoint. These are planned changes, not current behavior.
+and acceptance checkpoints. Phase 1 is implemented and verified on the unmerged
+`codex/transactional-outbox-phase1` branch; user review remains pending. Phase 2
+is deferred until that checkpoint. See the [verification record](release-checklist.md).
