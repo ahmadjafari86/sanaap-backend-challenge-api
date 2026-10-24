@@ -165,6 +165,12 @@ CELERY_BROKER_CONNECTION_TIMEOUT = 2
 CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 60, "socket_timeout": 2, "socket_connect_timeout": 2}
 CELERY_TASK_PUBLISH_RETRY = False
 
+OUTBOX_POLL_INTERVAL_SECONDS = env.float("OUTBOX_POLL_INTERVAL_SECONDS", default=1)
+OUTBOX_BATCH_SIZE = env.int("OUTBOX_BATCH_SIZE", default=10)
+OUTBOX_LEASE_SECONDS = env.int("OUTBOX_LEASE_SECONDS", default=60)
+OUTBOX_MAX_PUBLICATION_ATTEMPTS = env.int("OUTBOX_MAX_PUBLICATION_ATTEMPTS", default=20)
+OUTBOX_RELAY_HEARTBEAT_FILE = env("OUTBOX_RELAY_HEARTBEAT_FILE", default="/tmp/outbox-relay.heartbeat")
+
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",

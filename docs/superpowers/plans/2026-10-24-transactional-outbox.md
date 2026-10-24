@@ -17,7 +17,7 @@ MinIO, Docker Compose and Django's unittest runner.
 **Spec:** [2026-10-24-transactional-outbox-design.md](../specs/2026-10-24-transactional-outbox-design.md).
 
 **Status:** The user requested two phases. Phase 1 (T16–T19) is the next
-implementation scope; Phase 2 (T20–T23) is deferred. All tasks remain unstarted.
+implementation scope and is in progress; Phase 2 (T20–T23) is deferred.
 T16–T23 extend [the project queue](../../tasks.md).
 
 ## Delivery Phases
@@ -459,5 +459,5 @@ isolation without touching the user's running stack or volumes.
 - Each Review Focus condition has a targeted owning task, in addition to integration.
 - Proposed defaults are explicit; four attempts means persisted logical attempts,
   and PUBLISHED means destination acceptance rather than user-visible completion.
-- Implementation checkboxes remain unchecked. No implementation tests or service
-  changes have been performed as part of writing this plan.
+- Task queue/checklist records verified implementation separately from pending
+  branch review. Phase 2 remains deferred; no merge is authorized.

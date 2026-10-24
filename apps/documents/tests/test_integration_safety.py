@@ -21,6 +21,7 @@ class IntegrationIsolationTests(SimpleTestCase):
             "services": {
                 "backend": {"volumes": [{"type": "volume", "source": "static_data", "target": "/app/staticfiles"}, {"type": "volume", "source": "staging_data", "target": "/app/.staging"}]},
                 "worker": {"volumes": [{"type": "volume", "source": "staging_data", "target": "/app/.staging"}]},
+                "outbox-relay": {"volumes": [{"type": "volume", "source": "staging_data", "target": "/app/.staging"}]},
                 "nginx": {
                     "ports": [{"host_ip": "127.0.0.1", "target": 8080, "published": "28000"}],
                     "volumes": [{"type": "volume", "source": "static_data", "target": "/srv/static", "read_only": True}],
@@ -77,4 +78,11 @@ class IntegrationIsolationTests(SimpleTestCase):
 
     def test_rejects_publishing_worker_ports(self):
         self.config["services"]["worker"]["ports"] = [{"host_ip": "127.0.0.1", "target": 8000}]
+        self.assertFalse(is_isolated_config(self.config, self.project))
+
+    def test_rejects_relay_without_staging_or_with_published_ports(self):
+        no_staging = deepcopy(self.config)
+        no_staging["services"]["outbox-relay"]["volumes"] = []
+        self.assertFalse(is_isolated_config(no_staging, self.project))
+        self.config["services"]["outbox-relay"]["ports"] = [{"host_ip": "127.0.0.1", "target": 8000}]
         self.assertFalse(is_isolated_config(self.config, self.project))

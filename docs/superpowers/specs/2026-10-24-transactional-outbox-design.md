@@ -1,7 +1,8 @@
 # Transactional Outbox — Proposed Design
 
 **Status:** The user requested two delivery phases, starting with T16–T19.
-Implementation has not started. Detailed mechanisms and defaults below remain
+Phase 1 implementation is in progress on `codex/transactional-outbox-phase1`.
+The user prohibits merging into `develop` or `main`. Detailed mechanisms and defaults remain
 proposals to verify during task review.
 **Scope:** Phase 1 delivers upload and cleanup reliability with essential
 operations, recovery and integration checks. Phase 2 extends the same outbox to

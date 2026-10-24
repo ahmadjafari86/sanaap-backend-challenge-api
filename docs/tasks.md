@@ -42,7 +42,7 @@
 | T14 | Final regression checks and Git Flow release | Delivery | Completed; reviewed by user; v0.1.0 tagged and merged back into develop |
 | T15 | Django admin, test packages and development commands | Maintenance | Completed; design approved; 279 tests and real-service integration verified |
 | T16 | Outbox models and transactional enqueue | Phase 1 — Reliability | Implemented; 288 tests and fresh/0004 upgrade verified; branch review pending |
-| T17 | Independent relay, retry, leases and basic status/replay | Phase 1 — Reliability | Planned; depends on T16 |
+| T17 | Independent relay, retry, leases and basic status/replay | Phase 1 — Reliability | Implemented; 303 tests, Compose and relay lifecycle verified; branch review pending |
 | T18 | Durable uploads, receipts, storage retries and automatic recovery | Phase 1 — Reliability | Planned; depends on T16–T17 |
 | T19 | Durable cleanup, core integration and rollout acceptance | Phase 1 — Delivery | Planned; depends on T16–T18; phase gate |
 | T20 | Durable WebSocket notification publication | Phase 2 — Reliability | Deferred; after reviewed Phase 1 |
@@ -54,7 +54,8 @@
 
 The user requested two phases so the essential work can be delivered first.
 Phase 1 (T16–T19) is the next implementation scope; Phase 2 (T20–T23) is deferred.
-All tasks are unstarted. Follow the existing one-task/shared-review workflow.
+Phase 1 is in progress; verified task implementations remain pending branch review.
+Phase 2 remains deferred.
 No new release/merge is authorized by this planning update.
 
 ### Phase 1 — Uploads and Cleanup (Next)

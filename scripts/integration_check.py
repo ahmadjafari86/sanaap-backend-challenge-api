@@ -33,11 +33,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def is_isolated_config(config, project):
     if not re.fullmatch(r"sanaap-t09-[0-9a-f]{10}", project) or config.get("name") != project:
         return False
-    if set(config.get("services", {})) != {"backend", "worker", "nginx", "postgres", "redis", "minio"}:
+    if set(config.get("services", {})) != {"backend", "worker", "outbox-relay", "nginx", "postgres", "redis", "minio"}:
         return False
-    if config["services"]["backend"].get("ports") or config["services"]["worker"].get("ports"):
+    if any(config["services"][name].get("ports") for name in ("backend", "worker", "outbox-relay")):
         return False
-    for service in ("backend", "worker"):
+    for service in ("backend", "worker", "outbox-relay"):
         if not any(mount.get("source") == "staging_data" and mount.get("target") == "/app/.staging"
                    and not mount.get("read_only") for mount in config["services"][service].get("volumes", [])):
             return False

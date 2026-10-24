@@ -100,13 +100,13 @@ The user requested two phases, delivering the essential upload/cleanup scope fir
 Detailed proposed design and acceptance criteria are in the
 [Outbox design](superpowers/specs/2026-10-24-transactional-outbox-design.md) and
 [implementation plan](superpowers/plans/2026-10-24-transactional-outbox.md).
-Implementation has not started; keep the one-task/shared-review workflow.
+Phase 1 implementation is in progress on its feature branch; branch review is pending.
 Phase 1 has no dependency on T20–T23 and includes its own recovery/acceptance gate.
 
 ### Phase 1 — Uploads and Cleanup (Next)
 
 - [x] T16: Add OutboxMessage/OutboxReceipt, migration and transactional enqueue/deduplication (288 tests and migration upgrade verified; branch review pending).
-- [ ] T17: Add independent relay, upload/cleanup adapters, lease fencing, bounded retry, Compose service and basic status/DEAD replay.
+- [x] T17: Add independent relay, upload/cleanup adapters, lease fencing, bounded retry, Compose service and basic status/DEAD replay (303 tests and relay lifecycle verified; branch review pending).
 - [ ] T18: Make upload acceptance/receipts/retries durable; retain PENDING/staging during broker failure; add periodic stale/legacy recovery.
 - [ ] T19: Persist object/staging cleanup and safe compensation; pass core integration/full regression and document rollout/operator procedures.
 

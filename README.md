@@ -460,6 +460,33 @@ outer request transaction.
 
 ## Background worker and recovery
 
+The feature branch adds an independent `outbox-relay` service. Its PostgreSQL
+queue is separate from Celery broker availability: short claims use leases,
+publication failures retry with bounded backoff, and exhausted messages remain
+DEAD until an operator explicitly replays them. Publication is at least once;
+event IDs are stable across replay. The relay heartbeat checks its polling loop,
+while backlog age and DEAD counts describe whether delivery needs attention.
+
+Inspect the queue or replay an explicit DEAD event (at most 100 IDs per command):
+
+```bash
+docker compose exec backend python manage.py outbox_status
+docker compose exec backend python manage.py replay_outbox <event-uuid>
+```
+
+Status includes up to 20 DEAD IDs and never dumps payloads. Replay resets only
+publication scheduling; it preserves event identity, receipts and document
+storage-attempt state. The relay can also run once for an operator check:
+
+```bash
+docker compose exec backend python manage.py run_outbox_relay --once --batch-size 10
+```
+
+`OUTBOX_POLL_INTERVAL_SECONDS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_LEASE_SECONDS` and
+`OUTBOX_MAX_PUBLICATION_ATTEMPTS` configure polling, batches, leases and the
+publication budget (defaults: 1 second, 10, 60 seconds, 20). The independent
+service mounts private staging for cleanup and publishes no host ports.
+
 `make up` starts the worker alongside the API. Backend and worker share only the
 private `staging_data` volume (files mode 0600, owner UID 10001); Nginx cannot
 read it. The worker uses the backend image and waits for backend startup/migrations,
