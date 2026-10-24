@@ -41,7 +41,7 @@
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Completed; reviewed by user; merged into develop |
 | T14 | Final regression checks and Git Flow release | Delivery | Completed; reviewed by user; v0.1.0 tagged and merged back into develop |
 | T15 | Django admin, test packages and development commands | Maintenance | Completed; design approved; 279 tests and real-service integration verified |
-| T16 | Outbox models and transactional enqueue | Phase 1 — Reliability | Planned; next task; not started |
+| T16 | Outbox models and transactional enqueue | Phase 1 — Reliability | Implemented; 288 tests and fresh/0004 upgrade verified; branch review pending |
 | T17 | Independent relay, retry, leases and basic status/replay | Phase 1 — Reliability | Planned; depends on T16 |
 | T18 | Durable uploads, receipts, storage retries and automatic recovery | Phase 1 — Reliability | Planned; depends on T16–T17 |
 | T19 | Durable cleanup, core integration and rollout acceptance | Phase 1 — Delivery | Planned; depends on T16–T18; phase gate |

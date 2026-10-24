@@ -105,7 +105,7 @@ Phase 1 has no dependency on T20–T23 and includes its own recovery/acceptance 
 
 ### Phase 1 — Uploads and Cleanup (Next)
 
-- [ ] T16: Add OutboxMessage/OutboxReceipt, migration and transactional enqueue/deduplication.
+- [x] T16: Add OutboxMessage/OutboxReceipt, migration and transactional enqueue/deduplication (288 tests and migration upgrade verified; branch review pending).
 - [ ] T17: Add independent relay, upload/cleanup adapters, lease fencing, bounded retry, Compose service and basic status/DEAD replay.
 - [ ] T18: Make upload acceptance/receipts/retries durable; retain PENDING/staging during broker failure; add periodic stale/legacy recovery.
 - [ ] T19: Persist object/staging cleanup and safe compensation; pass core integration/full regression and document rollout/operator procedures.
