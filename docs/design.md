@@ -107,3 +107,19 @@ Do not include credentials or presigned download URLs in messages.
 1. Complete and test all mandatory requirements.
 2. Add audit logging and deployment configuration.
 3. Add background storage and WebSocket notifications if time permits.
+
+## Planned Transactional Outbox Extension
+
+The user requested two phases. Phase 1 (T16–T19) delivers uploads, object/staging
+cleanup, basic status/replay, automatic upload recovery and its own integration/
+rollout gate. Phase 2 (T20–T23) adds durable WebSocket publication/cache
+invalidation, advanced operations and whole-scope verification. Audit remains
+transactional from Phase 1; WebSocket/cache callbacks retain their existing
+best-effort behavior until Phase 2.
+
+The proposed approach retains PostgreSQL/Celery/Redis and adds a durable outbox
+with an independent polling relay. Detailed boundaries are in the
+[Outbox proposal](superpowers/specs/2026-10-24-transactional-outbox-design.md);
+[T16–T23](superpowers/plans/2026-10-24-transactional-outbox.md) define implementation
+and acceptance checkpoints. Phase 1 is next and independently deliverable; Phase
+2 is deferred until its review checkpoint. These are planned changes, not current behavior.

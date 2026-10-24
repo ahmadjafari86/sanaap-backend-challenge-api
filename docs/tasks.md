@@ -2,10 +2,14 @@
 
 **Source of requirements:** [design.md](design.md).
 **Progress checklist:** [implementation-plan.md](implementation-plan.md).
+**Planned Outbox extension:** [design](superpowers/specs/2026-10-24-transactional-outbox-design.md) and [T16–T23 implementation plan](superpowers/plans/2026-10-24-transactional-outbox.md).
 **Execution:** Implement one task, verify it, and review it with the user before starting the next task. A passing test run does not replace shared review.
 
 ## Git Flow
 
+- T16–T19 use `codex/transactional-outbox-phase1`, based on `develop` at
+  `008f1f7`. The user explicitly requires the work to remain on a feature branch:
+  do not merge it into `develop` or `main`. T20–T23 remain deferred.
 - T01–T09 continue on `feature/documents`, based on `develop` after the accounts PR was merged.
 - Keep task changes reviewable and commit them after shared review.
 - T09 prepares the documents pull request into `develop`.
@@ -37,6 +41,56 @@
 | T13 | Authenticated WebSocket notifications | Optional, included in scope | Completed; reviewed by user; merged into develop |
 | T14 | Final regression checks and Git Flow release | Delivery | Completed; reviewed by user; v0.1.0 tagged and merged back into develop |
 | T15 | Django admin, test packages and development commands | Maintenance | Completed; design approved; 279 tests and real-service integration verified |
+| T16 | Outbox models and transactional enqueue | Phase 1 — Reliability | Planned; next task; not started |
+| T17 | Independent relay, retry, leases and basic status/replay | Phase 1 — Reliability | Planned; depends on T16 |
+| T18 | Durable uploads, receipts, storage retries and automatic recovery | Phase 1 — Reliability | Planned; depends on T16–T17 |
+| T19 | Durable cleanup, core integration and rollout acceptance | Phase 1 — Delivery | Planned; depends on T16–T18; phase gate |
+| T20 | Durable WebSocket notification publication | Phase 2 — Reliability | Deferred; after reviewed Phase 1 |
+| T21 | Cache invalidation and expanded audit consistency checks | Phase 2 — Reliability | Deferred; depends on T16–T20 |
+| T22 | Advanced operations, retention and orphan reports | Phase 2 — Operations | Deferred; depends on T16–T21 |
+| T23 | Whole-scope Outbox integration, upgrade and documentation | Phase 2 — Delivery | Deferred; depends on T16–T22; phase gate |
+
+## Transactional Outbox — T16–T23
+
+The user requested two phases so the essential work can be delivered first.
+Phase 1 (T16–T19) is the next implementation scope; Phase 2 (T20–T23) is deferred.
+All tasks are unstarted. Follow the existing one-task/shared-review workflow.
+No new release/merge is authorized by this planning update.
+
+### Phase 1 — Uploads and Cleanup (Next)
+
+| Task | Acceptance checkpoint |
+| --- | --- |
+| T16 | Mutation/audit obligations share one transaction; dedupe is safe; document deletion cannot erase queued work |
+| T17 | Relay claims under PostgreSQL locks, fences stale leases and retries bounded failures; basic status and explicit DEAD replay work |
+| T18 | Broker-down POST stays 202/PENDING with staging; receipts/retries preserve the attempt budget; periodic stale/legacy recovery repairs lost published tasks |
+| T19 | Cleanup survives deletion/replacement/restarts without deleting owned objects; seven-service core integration, full regression and rollout docs pass the phase gate |
+
+Phase 1 is independently deliverable and has no dependency on Phase 2. Essential
+status/replay moved from T22 to T17; periodic recovery/legacy seeding moved from
+T22 to T18; core integration and initial rollout/operator docs moved from T23 to
+T19. Test broker/MinIO outages, relay crashes, duplicate processing and Redis
+message loss before the Phase 1 checkpoint. Existing best-effort cache and
+notification callbacks continue during Phase 1; audit remains transactional.
+
+### Phase 2 — Remaining Side Effects and Operations (Deferred)
+
+| Task | Acceptance checkpoint |
+| --- | --- |
+| T20 | READY/update publication retries after Channels failure; committed results and the authenticated minimal-frame protocol remain intact |
+| T21 | Durable invalidation targets previous versions; expand atomicity checks to new messages while preserving Phase 1 audit guarantees |
+| T22 | Detailed status, safe retention and read-only orphan reporting extend existing Phase 1 recovery/status/replay |
+| T23 | Full-profile integration extends core checks to notifications/cache/maintenance and verifies upgrade from Phase 1 with pending work |
+
+Begin this phase after the Phase 1 acceptance checkpoint is reviewed. T23 is
+additional whole-scope verification; core verification is already required by T19.
+
+Exact files, interfaces, test scenarios and per-task verification are in the
+[Outbox implementation plan](superpowers/plans/2026-10-24-transactional-outbox.md).
+WebSocket scope covers durable publication to Channels, with duplicate/delayed
+hints possible; disconnected-client replay is a separate capability. Outbox
+does not atomically include pre-transaction MinIO/filesystem writes. Phase 2
+reports uncertain orphans for manual investigation rather than automatically deleting them.
 
 ## T15 — Administration and development workflow
 

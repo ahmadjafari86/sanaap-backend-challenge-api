@@ -93,3 +93,32 @@
 - [x] Create Django and application administrators together with `make superuser`.
 - [x] Verify continuous `make logs`, optional service selection and MinIO login instructions.
 - [x] Pass 279 PostgreSQL tests, independent review and disposable real-service integration.
+
+## 8. Planned Transactional Outbox Extension (T16–T23)
+
+The user requested two phases, delivering the essential upload/cleanup scope first.
+Detailed proposed design and acceptance criteria are in the
+[Outbox design](superpowers/specs/2026-10-24-transactional-outbox-design.md) and
+[implementation plan](superpowers/plans/2026-10-24-transactional-outbox.md).
+Implementation has not started; keep the one-task/shared-review workflow.
+Phase 1 has no dependency on T20–T23 and includes its own recovery/acceptance gate.
+
+### Phase 1 — Uploads and Cleanup (Next)
+
+- [ ] T16: Add OutboxMessage/OutboxReceipt, migration and transactional enqueue/deduplication.
+- [ ] T17: Add independent relay, upload/cleanup adapters, lease fencing, bounded retry, Compose service and basic status/DEAD replay.
+- [ ] T18: Make upload acceptance/receipts/retries durable; retain PENDING/staging during broker failure; add periodic stale/legacy recovery.
+- [ ] T19: Persist object/staging cleanup and safe compensation; pass core integration/full regression and document rollout/operator procedures.
+
+Existing WebSocket/cache callbacks remain best effort during Phase 1; audit
+remains transactional. Move basic operations from T22 to T17, recovery from T22
+to T18 and core verification from T23 to T19.
+
+### Phase 2 — Remaining Side Effects and Operations (Deferred)
+
+Start after the Phase 1 acceptance checkpoint is reviewed.
+
+- [ ] T20: Publish READY/update WebSocket hints through the outbox with retry.
+- [ ] T21: Persist versioned cache invalidation and expand atomic document/audit/message consistency checks.
+- [ ] T22: Add detailed operations, safe retention and conservative orphan reporting; retain Phase 1 recovery/status/replay.
+- [ ] T23: Extend integration to the full scope, verify upgrade from Phase 1 and finalize operator documentation.
