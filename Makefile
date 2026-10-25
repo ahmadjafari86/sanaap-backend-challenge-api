@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help env up down logs ps check shell superuser test integration
+.PHONY: help env up down down-v logs ps check shell superuser test integration
 
 SERVICES ?=
 
@@ -8,6 +8,7 @@ SERVICES ?=
 help:
 	@echo "make up     - Build and start the project"
 	@echo "make down   - Stop containers and preserve data"
+	@echo "make down-v - Stop containers and delete project volumes"
 	@echo "make logs   - Follow container logs"
 	@echo "              Use SERVICES=backend to follow one service; Ctrl+C stops following"
 	@echo "make ps     - Show service status"
@@ -31,6 +32,9 @@ up: env
 
 down:
 	docker compose down
+
+down-v:
+	docker compose down --volumes
 
 logs:
 	docker compose logs --follow --tail=100 $(SERVICES)

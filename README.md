@@ -49,6 +49,8 @@ make down
 ```
 
 `make down` preserves database and object-storage volumes.
+Use `make down-v` to also delete the project's volumes, including database,
+object-storage, Redis, and staged-upload data.
 `make logs` shows the last 100 lines and keeps following new messages. Use
 `SERVICES=backend` (or another service name) to follow one service. Press Ctrl+C
 to stop following; the containers keep running.
