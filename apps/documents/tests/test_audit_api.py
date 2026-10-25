@@ -279,7 +279,7 @@ class DocumentAuditAPITests(APITestCase):
         self.client.force_authenticate(user=self.admin)
         with (
             patch.object(self.storage, "delete", side_effect=OSError("private-cleanup-secret")),
-            self.assertLogs("apps.documents.outbox_delivery", level="WARNING"),
+            self.assertLogs("apps.outbox.delivery", level="WARNING"),
             self.captureOnCommitCallbacks(execute=True),
         ):
             response = self.client.delete(self.detail)

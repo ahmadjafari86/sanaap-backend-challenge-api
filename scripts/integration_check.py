@@ -461,7 +461,7 @@ def main():
         ] + [
             ["integration-viewer", "download_url", broker_pending["id"], "failure", 409],
         ]
-        wait_shell("from apps.documents.models import OutboxMessage; "
+        wait_shell("from apps.outbox.models import OutboxMessage; "
                    "print(not OutboxMessage.objects.filter(status__in=['PENDING', 'PROCESSING']).exists())")
         shell(
             "import json, sys; from collections import Counter; from django.contrib.auth import get_user_model; "

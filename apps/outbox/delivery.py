@@ -13,6 +13,8 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .models import OutboxMessage
+from .registry import registry
+from .validation import validate_message
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +79,9 @@ def _finish(claim, *, now, error=None):
 
 
 def dispatch_message(claim: DeliveryClaim) -> None:
-    from .outbox_handlers import dispatch_message as dispatch
-    dispatch(claim)
+    validate_message(kind=claim.kind, document_id=claim.document_id,
+                     payload=claim.payload, schema_version=claim.schema_version)
+    registry.dispatch(claim)
 
 
 def relay_once(*, now: datetime | None = None, batch_size: int | None = None) -> int:

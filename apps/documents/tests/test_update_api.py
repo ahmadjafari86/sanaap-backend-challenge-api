@@ -371,7 +371,7 @@ class DocumentUpdateAPITests(APITestCase):
         self.client.force_authenticate(user=self.editor)
         with (
             patch.object(self.storage, "delete", side_effect=OSError("cleanup failed")),
-            self.assertLogs("apps.documents.outbox_delivery", level="WARNING"),
+            self.assertLogs("apps.outbox.delivery", level="WARNING"),
             self.captureOnCommitCallbacks(execute=True),
         ):
             response = self.client.patch(self.url, {"file": image_upload()}, format="multipart")

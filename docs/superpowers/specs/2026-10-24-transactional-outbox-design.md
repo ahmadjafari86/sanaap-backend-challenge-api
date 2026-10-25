@@ -1,5 +1,11 @@
 # Transactional Outbox — Proposed Design
 
+**Architecture update (2026-10-25):** App placement and additive migration/upgrade
+instructions in this historical design are superseded by the approved
+[dedicated outbox app design](2026-10-25-outbox-app-extraction-design.md).
+The assessment now uses fresh initial migrations; delivery semantics and the
+Phase 1/Phase 2 scope below are retained.
+
 **Status:** The user requested two delivery phases, starting with T16–T19.
 Phase 1 implementation is in progress on `codex/transactional-outbox-phase1`.
 The user prohibits merging into `develop` or `main`. Detailed mechanisms and defaults remain

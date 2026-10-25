@@ -204,7 +204,7 @@ class DocumentDeleteAPITests(APITestCase):
         self.client.force_authenticate(user=self.admin)
         with (
             patch.object(self.storage, "delete", side_effect=OSError("private-storage-details")),
-            self.assertLogs("apps.documents.outbox_delivery", level="WARNING") as logs,
+            self.assertLogs("apps.outbox.delivery", level="WARNING") as logs,
             self.captureOnCommitCallbacks(execute=True),
         ):
             response = self.client.delete(self.url)

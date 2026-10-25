@@ -3,7 +3,7 @@ import json
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from apps.documents.outbox_operations import get_outbox_status
+from apps.outbox.operations import get_outbox_status
 
 
 class Command(BaseCommand):

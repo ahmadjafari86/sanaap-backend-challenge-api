@@ -6,12 +6,14 @@ from uuid import uuid4
 from django.core.files.storage import default_storage
 from django.db import transaction
 
+from apps.outbox.services import enqueue_message
+
 from .audit import record_document_event
 from .caching import invalidate_document_metadata
 from .exceptions import DocumentNotReady
 from .models import Document, DocumentAuditEvent
 from .notifications import notify_document
-from .outbox import enqueue_message
+from .outbox.events import EventKind
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +68,7 @@ def _delete_document_object(object_key):
         logger.error("Document object cleanup failed (%s).", type(error).__name__)
         try:
             with transaction.atomic():
-                enqueue_message(kind="storage.object_delete_requested", document_id=None,
+                enqueue_message(kind=EventKind.OBJECT_DELETE, document_id=None,
                                 payload={"object_key": object_key}, dedupe_key=f"object-compensation:{uuid4()}")
         except Exception as failure:
             logger.error("Object cleanup persistence deferred (%s).", type(failure).__name__)
@@ -120,7 +122,7 @@ def update_document(*, document_id, title=None, uploaded_file=None, actor_id=Non
             )
 
             if stored_key is not None:
-                enqueue_message(kind="storage.object_delete_requested", document_id=document.pk,
+                enqueue_message(kind=EventKind.OBJECT_DELETE, document_id=document.pk,
                                 payload={"object_key": previous_key},
                                 dedupe_key=f"object-replace:{document.pk}:{previous_version}")
 
@@ -139,11 +141,11 @@ def delete_document(*, document_id, actor_id=None):
         object_key = document.object_key
         metadata_version = document.metadata_version
         staging_key = document.staging_key
-        enqueue_message(kind="storage.object_delete_requested", document_id=document_id,
+        enqueue_message(kind=EventKind.OBJECT_DELETE, document_id=document_id,
                         payload={"object_key": object_key},
                         dedupe_key=f"object-delete:{document_id}:{metadata_version}")
         if re.fullmatch(r"[0-9a-f]{32}\.stage", staging_key):
-            enqueue_message(kind="storage.staging_delete_requested", document_id=document_id,
+            enqueue_message(kind=EventKind.STAGING_DELETE, document_id=document_id,
                             payload={"staging_key": staging_key},
                             dedupe_key=f"staging-delete:{document_id}:{metadata_version}")
         document.delete()

@@ -8,14 +8,14 @@ from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 
-from ..models import Document, OutboxMessage, OutboxReceipt
-from ..outbox import enqueue_message
+from apps.outbox.models import OutboxMessage, OutboxReceipt
+from apps.outbox.services import enqueue_message
 
 
 class OutboxOperationsTests(TestCase):
     def setUp(self):
-        self.assertIsNotNone(importlib.util.find_spec("apps.documents.outbox_operations"), "DEAD messages need inspection and explicit replay")
-        from .. import outbox_operations
+        self.assertIsNotNone(importlib.util.find_spec("apps.outbox.operations"), "DEAD messages need inspection and explicit replay")
+        from apps.outbox import operations as outbox_operations
         self.operations = outbox_operations
         self.now = timezone.now()
         self.event = enqueue_message(kind="document.upload_requested", document_id=42,
@@ -28,7 +28,6 @@ class OutboxOperationsTests(TestCase):
         self.event.refresh_from_db()
         self.assertEqual((self.event.status, self.event.attempts, self.event.available_at), ("PENDING", 0, self.now))
         self.assertTrue(OutboxReceipt.objects.filter(event_id=self.event.pk).exists())
-        self.assertFalse(Document.objects.exists())
 
     def test_replay_rejects_active_or_missing_events_without_partial_changes(self):
         with self.assertRaises(ValidationError):

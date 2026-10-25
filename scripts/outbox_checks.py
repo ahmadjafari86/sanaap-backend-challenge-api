@@ -53,7 +53,8 @@ def verify_probe_result(identifiers):
     from pathlib import Path
     from django.conf import settings
     from django.contrib.auth import get_user_model
-    from apps.documents.models import Document, DocumentAuditEvent, OutboxMessage, OutboxReceipt
+    from apps.documents.models import Document, DocumentAuditEvent
+    from apps.outbox.models import OutboxMessage, OutboxReceipt
     actor = get_user_model().objects.get(username="outbox-integration-probe")
     expected = Counter({("create", "success", 202): 5, ("store", "success", 200): 5, ("delete", "success", 204): 5})
     actual = Counter(DocumentAuditEvent.objects.filter(actor_id=actor.pk).values_list("action", "outcome", "status_code"))
@@ -86,7 +87,7 @@ def run_outbox_checks(*, compose: list[str], phase: str = "core", run=None) -> N
         prefix = ("import json; from pathlib import Path; from datetime import timedelta; "
                   "from django.conf import settings; from django.utils import timezone; "
                   "from django.core.files.storage import default_storage; "
-                  "from apps.documents.models import Document, OutboxMessage, OutboxReceipt; ")
+                  "from apps.documents.models import Document; from apps.outbox.models import OutboxMessage, OutboxReceipt; ")
         return json.loads(shell(prefix + f"print(json.dumps({expression}))").splitlines()[-1])
 
     def wait_for(expression, *, timeout=60):
@@ -126,7 +127,7 @@ def run_outbox_checks(*, compose: list[str], phase: str = "core", run=None) -> N
     assert int(run(compose + ["exec", "-T", "redis", "redis-cli", "-n", "1", "LLEN", "documents"]).strip()) >= 1
     run(compose + ["exec", "-T", "redis", "redis-cli", "-n", "1", "DEL", "documents"])
     shell("from datetime import timedelta; from django.conf import settings; from django.utils import timezone; "
-          "from apps.documents.models import OutboxMessage; "
+          "from apps.outbox.models import OutboxMessage; "
           f"OutboxMessage.objects.filter(document_id={lost['id']}).update(published_at=timezone.now()-timedelta(seconds=settings.OUTBOX_UPLOAD_STALE_SECONDS+1))")
     start("worker", "outbox-relay")
     ready(lost)
@@ -135,7 +136,7 @@ def run_outbox_checks(*, compose: list[str], phase: str = "core", run=None) -> N
     stop("outbox-relay", "worker")
     duplicate = seed()
     crash_code = ("import os; from django.utils import timezone; "
-                  "from apps.documents.outbox_delivery import claim_batch, dispatch_message; "
+                  "from apps.outbox.delivery import claim_batch, dispatch_message; "
                   "claim = claim_batch(now=timezone.now(), limit=1)[0]; "
                   f"assert claim.document_id == {duplicate['id']}; "
                   "dispatch_message(claim); os._exit(23)")
@@ -144,7 +145,7 @@ def run_outbox_checks(*, compose: list[str], phase: str = "core", run=None) -> N
     if crashed.returncode != 23:
         raise RuntimeError("Publication crash probe did not reach the expected post-send checkpoint.")
     assert query(f"OutboxMessage.objects.get(document_id={duplicate['id']}).status == 'PROCESSING'")
-    shell("from datetime import timedelta; from django.utils import timezone; from apps.documents.models import OutboxMessage; "
+    shell("from datetime import timedelta; from django.utils import timezone; from apps.outbox.models import OutboxMessage; "
           f"OutboxMessage.objects.filter(document_id={duplicate['id']}).update(locked_until=timezone.now()-timedelta(seconds=1))")
     start("outbox-relay")
     wait_for(f"OutboxMessage.objects.get(document_id={duplicate['id']}).status == 'PUBLISHED'")
@@ -188,7 +189,7 @@ def run_outbox_checks(*, compose: list[str], phase: str = "core", run=None) -> N
     assert all(query(f"not default_storage.exists({row['key']!r})") for row in remaining)
 
     replay_id = query(f"str(OutboxMessage.objects.get(document_id={first['id']}, kind='storage.object_delete_requested').pk)")
-    shell(f"from apps.documents.models import OutboxMessage; OutboxMessage.objects.filter(pk={replay_id!r}).update(status='DEAD', attempts=20)")
+    shell(f"from apps.outbox.models import OutboxMessage; OutboxMessage.objects.filter(pk={replay_id!r}).update(status='DEAD', attempts=20)")
     run(compose + ["exec", "-T", "backend", "python", "manage.py", "replay_outbox", replay_id])
     wait_for(f"OutboxMessage.objects.get(pk={replay_id!r}).status == 'PUBLISHED'")
     shell(f"from scripts.outbox_checks import verify_probe_result; verify_probe_result({identifiers!r})")

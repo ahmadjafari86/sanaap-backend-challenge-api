@@ -1,5 +1,21 @@
 # Release checklist — v0.1.0
 
+## Outbox App Extraction — 2026-10-25
+
+The [approved extraction design](superpowers/specs/2026-10-25-outbox-app-extraction-design.md)
+moves delivery infrastructure to `apps.outbox` and keeps document adapters in
+`apps.documents.outbox`. Fresh first-party initial migrations replace the earlier
+migration history for this assessment; use a fresh database. Upgrade-from-0004
+evidence below records the prior implementation and does not describe the new
+schema's deployment procedure.
+
+Verification: **343/343 PostgreSQL tests** pass locally and in the rebuilt image.
+Fresh seven-service integration project `sanaap-t09-2dcf405af8` passed all core
+fault probes, migration drift/application, warning-free schema validation and
+proxy checks. The integration stack was removed with pre-existing volumes
+preserved. Independent review found no Critical, Important or Minor issues.
+After the initial uncommitted handoff, the user requested committing this refactor on the existing feature branch.
+
 ## Transactional Outbox Phase 1 — Unmerged Feature Checkpoint
 
 This addition is separate from the historical v0.1.0 release record below.

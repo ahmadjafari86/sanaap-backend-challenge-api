@@ -8,14 +8,15 @@ from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 
-from ..models import Document, DocumentAuditEvent, OutboxMessage, OutboxReceipt
-from ..outbox import enqueue_message
+from apps.outbox.models import OutboxMessage, OutboxReceipt
+from ..models import Document, DocumentAuditEvent
+from apps.outbox.services import enqueue_message
 
 
 class OutboxRecoveryTests(TestCase):
     def setUp(self):
-        self.assertIsNotNone(importlib.util.find_spec("apps.documents.outbox_recovery"), "Published tasks without receipts need recovery")
-        from ..outbox_recovery import recover_uploads
+        self.assertIsNotNone(importlib.util.find_spec("apps.documents.outbox.recovery"), "Published tasks without receipts need recovery")
+        from ..outbox.recovery import recover_uploads
         self.recover = recover_uploads
         self.now = timezone.now()
         self.user = get_user_model().objects.create_user(username="outbox-recovery")

@@ -1,5 +1,10 @@
 # Transactional Outbox Implementation Plan
 
+> Architecture update (2026-10-25): App/module placement and additive migration
+> instructions in this historical plan are superseded by the approved
+> [outbox app extraction design](../specs/2026-10-25-outbox-app-extraction-design.md)
+> and [implementation plan](2026-10-25-outbox-app-extraction.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver upload/cleanup reliability independently in Phase 1, then extend

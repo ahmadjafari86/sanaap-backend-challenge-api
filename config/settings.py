@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "django_minio_backend.apps.DjangoMinioBackendConfig",
     "apps.accounts.apps.AccountsConfig",
+    "apps.outbox.apps.OutboxConfig",
     "apps.documents.apps.DocumentsConfig",
 ]
 

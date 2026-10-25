@@ -6,14 +6,17 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Exists, OuterRef
 
-from .models import Document, OutboxMessage, OutboxReceipt
-from .outbox_uploads import resolve_upload_message
+from apps.outbox.models import OutboxMessage, OutboxReceipt
+
+from ..models import Document
+from .events import EventKind
+from .uploads import resolve_upload_message
 
 
 def recover_uploads(*, now: datetime, limit: int, dry_run: bool = False) -> int:
     if not 1 <= limit <= 1000:
         raise ValueError("Recovery batch size must be between 1 and 1000.")
-    unreceipted = OutboxMessage.objects.filter(kind="document.upload_requested").filter(
+    unreceipted = OutboxMessage.objects.filter(kind=EventKind.UPLOAD_REQUESTED).filter(
         ~Exists(OutboxReceipt.objects.filter(event_id=OuterRef("pk"))),
     )
     stale = unreceipted.filter(status="PUBLISHED", published_at__lte=now - timedelta(

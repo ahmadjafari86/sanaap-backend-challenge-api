@@ -15,7 +15,8 @@ from django.utils import timezone
 from PIL import Image
 from rest_framework.test import APITestCase
 
-from ..models import Document, DocumentAuditEvent, OutboxMessage, OutboxReceipt
+from apps.outbox.models import OutboxMessage, OutboxReceipt
+from ..models import Document, DocumentAuditEvent
 from .outbox_helpers import deliver_outbox_once
 from .. import background
 from ..serializers import DocumentUploadSerializer
@@ -236,9 +237,9 @@ class BackgroundWorkerTests(TestCase):
         self.assertFalse(OutboxMessage.objects.exists())
 
     def test_dispatch_failure_retains_pending_stage_and_redacted_retry(self):
-        from ..outbox_delivery import relay_once
+        from apps.outbox.delivery import relay_once
         document = self.accept()
-        with patch("apps.documents.tasks.store_document.apply_async", side_effect=OSError("private-broker")), self.assertLogs("apps.documents.outbox_delivery", level="WARNING") as logs:
+        with patch("apps.documents.tasks.store_document.apply_async", side_effect=OSError("private-broker")), self.assertLogs("apps.outbox.delivery", level="WARNING") as logs:
             relay_once()
         document.refresh_from_db()
         self.assertEqual(document.status, "PENDING")

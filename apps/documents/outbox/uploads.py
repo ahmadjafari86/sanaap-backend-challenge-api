@@ -6,8 +6,12 @@ from uuid import UUID
 from django.db import transaction
 from django.utils import timezone
 
-from .models import Document, OutboxMessage, OutboxReceipt
-from .outbox import enqueue_message, validate_message
+from apps.outbox.models import OutboxMessage, OutboxReceipt
+from apps.outbox.services import enqueue_message
+from apps.outbox.validation import validate_message
+
+from ..models import Document
+from .events import EventKind
 
 
 def resolve_upload_message(*, document_id: int, event_id: str | None) -> OutboxMessage | None:
@@ -19,13 +23,13 @@ def resolve_upload_message(*, document_id: int, event_id: str | None) -> OutboxM
         except (ValueError, TypeError, AttributeError):
             return None
         return OutboxMessage.objects.filter(pk=identity, document_id=document_id,
-                                            kind="document.upload_requested").first()
+                                            kind=EventKind.UPLOAD_REQUESTED).first()
     document = Document.objects.filter(pk=document_id, status="PENDING").first()
     if document is None:
         return None
     attempt = min(document.storage_attempts + 1, 4)
     with transaction.atomic():
-        return enqueue_message(kind="document.upload_requested", document_id=document_id,
+        return enqueue_message(kind=EventKind.UPLOAD_REQUESTED, document_id=document_id,
                                payload={"attempt_number": attempt}, dedupe_key=f"upload:{document_id}:{attempt}")
 
 
@@ -40,12 +44,12 @@ def _record_receipt(message):
 
 
 def _process_upload(*, document_id, event_id):
-    from .background import _compensate_attempt, _process_staged_document_attempt
+    from ..background import _compensate_attempt, _process_staged_document_attempt
     attempted_key = None
     try:
         with transaction.atomic():
             message = OutboxMessage.objects.select_for_update().filter(
-                pk=event_id, document_id=document_id, kind="document.upload_requested",
+                pk=event_id, document_id=document_id, kind=EventKind.UPLOAD_REQUESTED,
             ).first()
             if message is None or OutboxReceipt.objects.filter(event_id=message.pk).exists():
                 return False
@@ -66,7 +70,7 @@ def _process_upload(*, document_id, event_id):
             retry = _process_staged_document_attempt(document)
             if retry:
                 next_attempt = document.storage_attempts + 1
-                enqueue_message(kind="document.upload_requested", document_id=document_id,
+                enqueue_message(kind=EventKind.UPLOAD_REQUESTED, document_id=document_id,
                                 payload={"attempt_number": next_attempt}, dedupe_key=f"upload:{document_id}:{next_attempt}",
                                 available_at=timezone.now() + timedelta(seconds=min(2 ** (document.storage_attempts - 1), 8)))
             _record_receipt(message)

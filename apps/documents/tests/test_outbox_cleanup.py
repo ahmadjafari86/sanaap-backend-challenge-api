@@ -14,9 +14,10 @@ from django.utils import timezone
 from PIL import Image
 
 from .. import background, services
-from ..models import Document, DocumentAuditEvent, OutboxMessage
-from ..outbox import enqueue_message
-from ..outbox_delivery import relay_once
+from apps.outbox.models import OutboxMessage
+from ..models import Document, DocumentAuditEvent
+from apps.outbox.services import enqueue_message
+from apps.outbox.delivery import relay_once
 from ..serializers import DocumentUploadSerializer
 
 
@@ -149,7 +150,7 @@ class OutboxCleanupTests(TestCase):
             self.assertFalse(path.exists())
 
     def assert_failed_upload_replaces_skipped_compensation(self, storage_attempts):
-        from ..outbox_uploads import process_outbox_upload, resolve_upload_message
+        from ..outbox.uploads import process_outbox_upload, resolve_upload_message
 
         with TemporaryDirectory() as directory, override_settings(DOCUMENT_STAGING_ROOT=directory):
             Document.objects.filter(pk=self.document.pk).update(
@@ -178,6 +179,18 @@ class OutboxCleanupTests(TestCase):
     def test_exhausted_legacy_upload_cleans_partial_object_after_skipped_compensation(self):
         self.assert_failed_upload_replaces_skipped_compensation(storage_attempts=4)
 
+    def test_staging_cleanup_is_real_and_missing_file_replay_succeeds(self):
+        with TemporaryDirectory() as directory, override_settings(DOCUMENT_STAGING_ROOT=directory):
+            key = "a" * 32 + ".stage"
+            path = Path(directory) / key
+            path.write_bytes(b"private image")
+            event = enqueue_message(dedupe_key="staging-replay", document_id=None, kind="storage.staging_delete_requested", payload={"staging_key": key})
+            relay_once()
+            self.assertFalse(path.exists())
+            OutboxMessage.objects.filter(pk=event.pk).update(status="PENDING")
+            relay_once()
+            event.refresh_from_db()
+            self.assertEqual(event.status, "PUBLISHED")
 
 @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
 class OutboxAcceptanceCompensationTests(TransactionTestCase):

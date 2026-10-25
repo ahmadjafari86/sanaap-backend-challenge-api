@@ -3,11 +3,12 @@
 from datetime import datetime
 from uuid import UUID
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import transaction
-from django.db.models import Count, Exists, OuterRef
+from django.db.models import Count
 
-from .models import OutboxMessage, OutboxReceipt
+from .models import OutboxMessage
+from .registry import registry
 
 
 def get_outbox_status(*, now: datetime) -> dict:
@@ -15,18 +16,18 @@ def get_outbox_status(*, now: datetime) -> dict:
     counts.update({row["status"]: row["count"] for row in
                    OutboxMessage.objects.values("status").annotate(count=Count("id"))})
     due = OutboxMessage.objects.filter(status="PENDING", available_at__lte=now).order_by("available_at").first()
-    unreceipted = OutboxMessage.objects.filter(kind="document.upload_requested", status="PUBLISHED").filter(
-        ~Exists(OutboxReceipt.objects.filter(event_id=OuterRef("pk"))),
-    ).order_by("published_at").first()
-    return {
+    status = {
         "counts": counts,
         "oldest_due_age_seconds": max(0, (now - due.available_at).total_seconds()) if due else None,
-        "oldest_unreceipted_age_seconds": max(0, (now - unreceipted.published_at).total_seconds())
-        if unreceipted and unreceipted.published_at else None,
         "expired_leases": OutboxMessage.objects.filter(status="PROCESSING", locked_until__lte=now).count(),
         "dead_event_ids": [str(value) for value in OutboxMessage.objects.filter(status="DEAD").order_by(
             "created_at", "id").values_list("pk", flat=True)[:20]],
     }
+
+    extensions = registry.get_status(now=now)
+    if status.keys() & extensions.keys():
+        raise ImproperlyConfigured("Adapter cannot overwrite core outbox status fields.")
+    return {**status, **extensions}
 
 
 def replay_dead_messages(*, event_ids: list[UUID], now: datetime) -> int:

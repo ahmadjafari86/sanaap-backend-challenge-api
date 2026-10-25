@@ -14,15 +14,16 @@ from django.utils import timezone
 from PIL import Image
 
 from .. import background
-from ..models import DocumentAuditEvent, OutboxMessage, OutboxReceipt
+from apps.outbox.models import OutboxMessage, OutboxReceipt
+from ..models import DocumentAuditEvent
 from ..serializers import DocumentUploadSerializer
 
 
 @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
 class OutboxUploadTests(TestCase):
     def setUp(self):
-        self.assertIsNotNone(importlib.util.find_spec("apps.documents.outbox_uploads"), "Uploads need processing receipts and durable attempts")
-        from .. import outbox_uploads
+        self.assertIsNotNone(importlib.util.find_spec("apps.documents.outbox.uploads"), "Uploads need processing receipts and durable attempts")
+        from ..outbox import uploads as outbox_uploads
         self.uploads = outbox_uploads
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -109,7 +110,7 @@ class OutboxUploadTests(TestCase):
 
     def test_receipt_failure_rolls_back_ready_audit_cleanup_and_compensates(self):
         document, event = self.accept()
-        with patch("apps.documents.outbox_uploads.OutboxReceipt.objects.create", side_effect=IntegrityError("private")):
+        with patch("apps.documents.outbox.uploads.OutboxReceipt.objects.create", side_effect=IntegrityError("private")):
             with self.assertRaises(IntegrityError):
                 self.process(document, event)
         document.refresh_from_db()
@@ -122,7 +123,7 @@ class OutboxUploadTests(TestCase):
     def test_retry_enqueue_failure_rolls_back_attempt_and_receipt(self):
         document, event = self.accept()
         with patch.object(self.storage, "save", side_effect=OSError("offline")):
-            with patch("apps.documents.outbox_uploads.enqueue_message", side_effect=IntegrityError("private")):
+            with patch("apps.documents.outbox.uploads.enqueue_message", side_effect=IntegrityError("private")):
                 with self.assertRaises(IntegrityError):
                     self.process(document, event)
         document.refresh_from_db()
@@ -130,7 +131,7 @@ class OutboxUploadTests(TestCase):
         self.assertFalse(OutboxReceipt.objects.exists())
 
     def test_completed_worker_fences_a_late_publisher_failure(self):
-        from ..outbox_delivery import _finish, claim_batch
+        from apps.outbox.delivery import _finish, claim_batch
         document, event = self.accept()
         claim = claim_batch(now=timezone.now(), limit=1)[0]
         self.process(document, event)

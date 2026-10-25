@@ -1,7 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
-from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, close_old_connections, transaction
 from django.test import TestCase, TransactionTestCase
@@ -11,10 +10,8 @@ from .. import models
 
 class OutboxModelTests(TestCase):
     def setUp(self):
-        self.assertTrue(hasattr(models, "OutboxMessage"), "Document obligations need a durable OutboxMessage")
-        from ..outbox import enqueue_message
+        from apps.outbox.services import enqueue_message
         self.enqueue = enqueue_message
-        self.user = get_user_model().objects.create_user(username="outbox-models")
 
     def message(self, **changes):
         arguments = {
@@ -22,24 +19,6 @@ class OutboxModelTests(TestCase):
             "payload": {"attempt_number": 1}, "dedupe_key": "upload:42:1",
         }
         return self.enqueue(**{**arguments, **changes})
-
-    def document(self):
-        return models.Document.objects.create(
-            title="Atomic", creator=self.user, object_key="documents/atomic.png", file_size=1,
-        )
-
-    def test_mutation_and_message_rollback_together(self):
-        with self.assertRaises(RuntimeError):
-            with transaction.atomic():
-                document = self.document()
-                models.DocumentAuditEvent.objects.create(
-                    document_id=document.pk, action="create", outcome="success", status_code=202,
-                )
-                self.message(document_id=document.pk)
-                raise RuntimeError("rollback")
-        self.assertFalse(models.Document.objects.exists())
-        self.assertFalse(models.DocumentAuditEvent.objects.exists())
-        self.assertFalse(models.OutboxMessage.objects.exists())
 
     def test_identical_dedupe_returns_same_event(self):
         first, duplicate = self.message(), self.message()
@@ -51,48 +30,10 @@ class OutboxModelTests(TestCase):
         first = self.message()
         with self.assertRaises(ValidationError):
             self.message(payload={"attempt_number": 2})
-        self.document()
+        models.OutboxReceipt.objects.create(event_id=first.pk)
         first.refresh_from_db()
         self.assertEqual(first.payload, {"attempt_number": 1})
-        self.assertTrue(models.Document.objects.exists())
-
-    def test_document_deletion_preserves_message(self):
-        document = self.document()
-        document_id = document.pk
-        event = self.message(document_id=document_id)
-        document.delete()
-        event.refresh_from_db()
-        self.assertEqual(event.document_id, document_id)
-
-    def test_unknown_kind_version_or_private_payload_rejected(self):
-        invalid = [
-            {"kind": "unknown"},
-            {"payload": {"attempt_number": 1, "token": "private"}},
-            {"payload": {"attempt_number": True}},
-            {"payload": {"attempt_number": 0}},
-            {"payload": {"attempt_number": 5}},
-            {"document_id": True}, {"document_id": None},
-        ]
-        for changes in invalid:
-            with self.subTest(changes=changes), self.assertRaises(ValidationError):
-                self.message(**changes)
-        event = models.OutboxMessage(
-            kind="document.upload_requested", document_id=42, payload={"attempt_number": 1},
-            dedupe_key="unknown-version", schema_version=2,
-        )
-        with self.assertRaises(ValidationError):
-            event.full_clean()
-        self.assertFalse(models.OutboxMessage.objects.exists())
-
-    def test_cleanup_payload_rejects_staging_traversal_and_unexpected_fields(self):
-        for payload in ({"staging_key": "../private"}, {"staging_key": "a" * 32 + ".stage", "url": "private"}):
-            with self.subTest(payload=payload), self.assertRaises(ValidationError):
-                self.message(kind="storage.staging_delete_requested", payload=payload)
-        event = self.message(
-            kind="storage.staging_delete_requested", document_id=None,
-            payload={"staging_key": "a" * 32 + ".stage"},
-        )
-        self.assertIsNone(event.document_id)
+        self.assertTrue(models.OutboxReceipt.objects.filter(event_id=first.pk).exists())
 
     def test_receipt_event_identity_is_unique(self):
         event = self.message()
@@ -105,7 +46,7 @@ class OutboxModelTests(TestCase):
 class OutboxEnqueueTransactionTests(TransactionTestCase):
     def setUp(self):
         self.assertTrue(hasattr(models, "OutboxMessage"), "Document obligations need a durable OutboxMessage")
-        from ..outbox import enqueue_message
+        from apps.outbox.services import enqueue_message
         self.enqueue = enqueue_message
 
     def test_enqueue_requires_the_mutation_transaction(self):

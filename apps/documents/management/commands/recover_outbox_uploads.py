@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from apps.documents.outbox_recovery import recover_uploads
+from apps.documents.outbox.recovery import recover_uploads
 
 
 class Command(BaseCommand):

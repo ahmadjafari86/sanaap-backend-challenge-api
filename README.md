@@ -464,6 +464,21 @@ outer request transaction.
 
 ## Background worker and recovery
 
+The `apps.outbox` Django app owns message/receipt models, transactional enqueue,
+leases, retry/backoff, relay delivery, and general status/replay commands.
+`apps.documents.outbox` owns event names and payload validation, upload and
+cleanup handlers, processing receipts, upload recovery, and upload-age metrics.
+Document code calls `apps.outbox.services.enqueue_message` inside its mutation
+transaction; the outbox core does not import document code.
+
+`DocumentsConfig.ready()` calls `documents.outbox.register_adapters()` to wire
+event validators and active handlers into the explicit in-process registry.
+Recovery/status callbacks let the relay and operator commands retain upload
+recovery and metrics without owning those domain rules. Registration performs
+no database queries or external I/O and is safe to repeat unchanged; conflicting
+registrations fail at startup. Phase 2 kinds remain validated reservations with
+no active delivery handlers.
+
 The feature branch adds an independent `outbox-relay` service. Its PostgreSQL
 queue is separate from Celery broker availability: short claims use leases,
 publication failures retry with bounded backoff, and exhausted messages remain
@@ -539,13 +554,14 @@ Celery behavior references: [Django transaction dispatch](https://docs.celeryq.d
 [idempotence and late acknowledgements](https://docs.celeryq.dev/en/stable/userguide/tasks.html),
 and [Redis visibility timeout](https://docs.celeryq.dev/en/stable/getting-started/backends-and-brokers/redis.html#visibility-timeout).
 
-For upgrades, apply the additive migration before enabling outbox-aware writers
-and deploy compatible workers before publishing UUID-bearing tasks. Backend
-startup applies migrations; the relay waits for backend health. Existing queued
-document-ID-only tasks and PENDING rows are supported by the recovery path.
-Preserve the staging volume. Inspect/drain obligations before rolling binaries
-back to the legacy implementation; never reverse/drop the outbox migration while
-work remains. The feature branch is kept separate from `develop` and `main`.
+This assessment uses fresh initial migrations for `accounts`, `documents`, and
+`outbox`; it does not provide an upgrade path from the earlier migration history.
+Use a fresh database when switching to this layout. For an installation that
+already used the earlier migrations, choose a new local Compose project/database
+or explicitly reset its disposable database before startup. Backend startup
+applies migrations; the relay waits for backend health. The existing
+document-ID-only task and PENDING-row recovery behavior is retained. The feature
+branch is kept separate from `develop` and `main`.
 
 `make integration` includes the Phase 1 `core` fault profile: stopped relay,
 actual Redis task loss, a process exiting immediately after broker publication,

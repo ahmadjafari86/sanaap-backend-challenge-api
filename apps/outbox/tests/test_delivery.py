@@ -1,23 +1,21 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import importlib.util
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from threading import Barrier
 from unittest.mock import patch
 
 from django.db import OperationalError, close_old_connections, transaction
-from django.test import TransactionTestCase, override_settings
+from django.test import TransactionTestCase
 from django.utils import timezone
 
-from ..models import OutboxMessage
-from ..outbox import enqueue_message
+from apps.outbox.models import OutboxMessage
+from apps.outbox.services import enqueue_message
 
 
 class OutboxDeliveryTests(TransactionTestCase):
     def setUp(self):
-        self.assertIsNotNone(importlib.util.find_spec("apps.documents.outbox_delivery"), "Committed obligations need a relay")
-        from .. import outbox_delivery
+        self.assertIsNotNone(importlib.util.find_spec("apps.outbox.delivery"), "Committed obligations need a relay")
+        from apps.outbox import delivery as outbox_delivery
         self.delivery = outbox_delivery
         self.now = timezone.now()
 
@@ -139,16 +137,3 @@ class OutboxDeliveryTests(TransactionTestCase):
         self.assertEqual(sent, [({"document_id": 42, "event_id": str(event.pk)}, str(event.pk))] * 2)
         event.refresh_from_db()
         self.assertEqual(event.status, "PUBLISHED")
-
-    def test_staging_cleanup_is_real_and_missing_file_replay_succeeds(self):
-        with TemporaryDirectory() as directory, override_settings(DOCUMENT_STAGING_ROOT=directory):
-            key = "a" * 32 + ".stage"
-            path = Path(directory) / key
-            path.write_bytes(b"private image")
-            event = self.event(kind="storage.staging_delete_requested", payload={"staging_key": key})
-            self.delivery.relay_once(now=self.now)
-            self.assertFalse(path.exists())
-            OutboxMessage.objects.filter(pk=event.pk).update(status="PENDING")
-            self.delivery.relay_once(now=self.now)
-            event.refresh_from_db()
-            self.assertEqual(event.status, "PUBLISHED")

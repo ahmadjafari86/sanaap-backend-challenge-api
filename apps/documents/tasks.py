@@ -3,7 +3,7 @@
 from celery import shared_task
 from django.db import DatabaseError
 
-from .outbox_uploads import process_outbox_upload, resolve_upload_message
+from .outbox.uploads import process_outbox_upload, resolve_upload_message
 
 
 @shared_task(acks_late=True, reject_on_worker_lost=True, ignore_result=True)

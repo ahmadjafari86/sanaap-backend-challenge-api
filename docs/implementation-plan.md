@@ -96,6 +96,11 @@
 
 ## 8. Transactional Outbox Extension (T16–T23)
 
+App placement and the assessment's fresh migration strategy now follow the
+[outbox app extraction design](superpowers/specs/2026-10-25-outbox-app-extraction-design.md)
+and [execution plan](superpowers/plans/2026-10-25-outbox-app-extraction.md).
+The implementation/upgrade evidence below records the original Phase 1 checkpoint.
+
 The user requested two phases, delivering the essential upload/cleanup scope first.
 Detailed design and acceptance criteria are in the
 [Outbox design](superpowers/specs/2026-10-24-transactional-outbox-design.md) and

@@ -11,11 +11,13 @@ from django.db import transaction
 from minio.error import MinioException
 from urllib3.exceptions import HTTPError
 
+from apps.outbox.services import enqueue_message
+
 from .audit import record_document_event
 from .caching import invalidate_document_metadata
 from .models import Document, DocumentAuditEvent
 from .notifications import notify_document
-from .outbox import enqueue_message
+from .outbox.events import EventKind
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +41,7 @@ def delete_staged_file(key):
         logger.error("Staged file cleanup failed (%s).", type(error).__name__)
         try:
             with transaction.atomic():
-                enqueue_message(kind="storage.staging_delete_requested", document_id=None,
+                enqueue_message(kind=EventKind.STAGING_DELETE, document_id=None,
                                 payload={"staging_key": key}, dedupe_key=f"staging-compensation:{uuid4()}")
         except Exception as failure:
             logger.error("Staging cleanup persistence deferred (%s).", type(failure).__name__)
@@ -60,7 +62,7 @@ def stage_document(*, title, uploaded_file, creator):
             )
             record_document_event(actor_id=creator.pk, action=DocumentAuditEvent.Action.CREATE,
                                   document_id=document.pk, outcome=DocumentAuditEvent.Outcome.SUCCESS, status_code=202)
-            enqueue_message(kind="document.upload_requested", document_id=document.pk,
+            enqueue_message(kind=EventKind.UPLOAD_REQUESTED, document_id=document.pk,
                             payload={"attempt_number": 1}, dedupe_key=f"upload:{document.pk}:1")
         return document
     except Exception:
@@ -81,14 +83,14 @@ def transition_document(document, state):
     )
     transaction.on_commit(partial(invalidate_document_metadata, document.pk, previous_version))
     if re.fullmatch(r"[0-9a-f]{32}\.stage", staging_key):
-        enqueue_message(kind="storage.staging_delete_requested", document_id=document.pk,
+        enqueue_message(kind=EventKind.STAGING_DELETE, document_id=document.pk,
                         payload={"staging_key": staging_key},
                         dedupe_key=f"staging-delete:{document.pk}:{previous_version}")
     if state == Document.Status.FAILED:
         # Earlier compensation may have been skipped while this key was still
         # owned by PENDING. Terminal failure needs its own cleanup obligation,
         # even when this attempt failed before opening the staged file.
-        enqueue_message(kind="storage.object_delete_requested", document_id=document.pk,
+        enqueue_message(kind=EventKind.OBJECT_DELETE, document_id=document.pk,
                         payload={"object_key": document.object_key},
                         dedupe_key=f"object-failed:{document.pk}:{previous_version}")
     if state == Document.Status.READY:
@@ -97,7 +99,7 @@ def transition_document(document, state):
 
 def publish_document(document_id):
     """Compatibility entry point: ensure an obligation, never publish inline."""
-    from .outbox_uploads import resolve_upload_message
+    from .outbox.uploads import resolve_upload_message
     try:
         return resolve_upload_message(document_id=document_id, event_id=None) is not None
     except Exception as error:
@@ -107,7 +109,7 @@ def publish_document(document_id):
 
 def process_staged_document(document_id):
     """Compatibility wrapper; the outbox owns timing and deduplication."""
-    from .outbox_uploads import _process_upload, resolve_upload_message
+    from .outbox.uploads import _process_upload, resolve_upload_message
     message = resolve_upload_message(document_id=document_id, event_id=None)
     return _process_upload(document_id=document_id, event_id=message.pk) if message else False
 

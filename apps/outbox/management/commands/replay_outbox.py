@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from apps.documents.outbox_operations import replay_dead_messages
+from apps.outbox.operations import replay_dead_messages
 
 
 class Command(BaseCommand):
