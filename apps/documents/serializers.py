@@ -1,10 +1,12 @@
+import struct
+
 from PIL import Image
 from rest_framework import serializers
 
 from .models import Document
 
 MAX_IMAGE_SIZE = 10 * 1024 * 1024
-ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG"}
+ALLOWED_IMAGE_FORMATS = {"JPEG", "MPO", "PNG"}
 
 
 class DocumentListFilterSerializer(serializers.Serializer):
@@ -14,7 +16,7 @@ class DocumentListFilterSerializer(serializers.Serializer):
 
 class DocumentUploadSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255)
-    file = serializers.ImageField(help_text="Real JPEG or PNG image, at most 10 MiB (10,485,760 bytes).")
+    file = serializers.ImageField(help_text="Real JPEG (including MPO) or PNG image, at most 10 MiB (10,485,760 bytes).")
 
     def validate_file(self, uploaded_file):
         if uploaded_file.size > MAX_IMAGE_SIZE:
@@ -24,14 +26,25 @@ class DocumentUploadSerializer(serializers.Serializer):
 
         if uploaded_file.image.format not in ALLOWED_IMAGE_FORMATS:
             raise serializers.ValidationError(
-                "Only JPEG and PNG images are allowed.",
+                "Only JPEG (including MPO) and PNG images are allowed.",
             )
 
         try:
             uploaded_file.seek(0)
             with Image.open(uploaded_file) as image:
-                image.load()
-        except (OSError, ValueError):
+                # MPO contains multiple JPEG pictures. Validate each one while
+                # retaining the original bytes and Pillow's detected MIME type.
+                frames = image.n_frames if image.format == "MPO" else 1
+                for frame in range(frames):
+                    image.seek(frame)
+                    # MPO seek() does not repeat Image.open()'s pixel guard.
+                    if Image.MAX_IMAGE_PIXELS is not None and image.width * image.height > 2 * Image.MAX_IMAGE_PIXELS:
+                        raise Image.DecompressionBombError("Image exceeds the Pillow pixel limit.")
+                    image.load()
+        except (
+            EOFError, IndexError, OSError, SyntaxError, TypeError, ValueError,
+            struct.error, Image.DecompressionBombError,
+        ):
             raise serializers.ValidationError("Upload a complete, valid image.") from None
         finally:
             uploaded_file.seek(0)
@@ -41,7 +54,7 @@ class DocumentUploadSerializer(serializers.Serializer):
 class DocumentUpdateSerializer(DocumentUploadSerializer):
     file = serializers.ImageField(
         required=False,
-        help_text="Optional replacement JPEG or PNG image, at most 10 MiB (10,485,760 bytes).",
+        help_text="Optional replacement JPEG (including MPO) or PNG image, at most 10 MiB (10,485,760 bytes).",
     )
 
     def validate(self, attrs):

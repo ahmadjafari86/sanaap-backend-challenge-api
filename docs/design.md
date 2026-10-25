@@ -38,7 +38,8 @@ business endpoints continue to require JWT authentication and application roles.
 ## Documents
 Store title, original filename, object key, content type, file size,
 creator, creation time, and update time.
-Accept JPEG and PNG images up to 10 MiB.
+Accept JPEG (including multi-picture MPO) and PNG images up to 10 MiB. Validate
+every MPO picture and retain the original bytes with detected `image/mpo` metadata.
 Validate image contents rather than trusting filename or declared MIME type.
 Use filtering and pagination on the document list.
 

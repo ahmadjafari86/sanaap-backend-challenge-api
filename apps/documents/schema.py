@@ -45,10 +45,11 @@ list_schema = extend_schema_view(
     ),
     post=extend_schema(
         tags=["Documents"],
-        summary="Accept a JPEG or PNG document for background storage",
+        summary="Accept a JPEG/MPO or PNG document for background storage",
         description=(
             "Admins and editors upload multipart title/file data. The file must contain a real "
-            "JPEG or PNG image no larger than 10 MiB (10,485,760 bytes). "
+            "JPEG (including multi-picture MPO) or PNG image no larger than 10 MiB (10,485,760 bytes). "
+            "All MPO pictures must decode; the original bytes are retained with content type image/mpo. "
             "The authenticated user becomes the creator; storage keys and file metadata are server-owned. "
             "Returns 202 with PENDING after private staging and database acceptance. Poll detail for "
             "READY or FAILED. The Celery worker stores bytes in MinIO; dispatch or exhausted storage "
@@ -75,7 +76,7 @@ detail_schema = extend_schema_view(
         summary="Update a title and optionally replace its image",
         description=(
             "Admins and editors may update any READY document; other states return 409. A title is required; the image is optional. "
-            "Use JSON/form data for title-only updates and multipart for a replacement JPEG/PNG up to 10 MiB. "
+            "Use JSON/form data for title-only updates and multipart for a replacement JPEG/MPO or PNG up to 10 MiB. "
             "Original creator/creation time are preserved. Replacement uploads use a new key; "
             "previous-file cleanup runs after commit. Cleanup failure cannot undo a committed update."
         ),
@@ -88,7 +89,7 @@ detail_schema = extend_schema_view(
         description=(
             "Admins and editors may update any READY document; other states return 409. Provide at least a title or file; empty updates "
             "return 400. JSON/form requests update only the title; multipart may also replace the image "
-            "with a validated JPEG/PNG up to 10 MiB. Server-owned metadata cannot be overridden. "
+            "with a validated JPEG/MPO or PNG up to 10 MiB. Server-owned metadata cannot be overridden. "
             "Replacement and cache cleanup run after database commit."
         ),
         request=update_requests,

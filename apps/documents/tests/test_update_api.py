@@ -16,6 +16,7 @@ from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from ..models import Document
+from .image_helpers import mpo_bytes
 from .outbox_helpers import deliver_outbox_once
 
 User = get_user_model()
@@ -153,6 +154,24 @@ class DocumentUpdateAPITests(APITestCase):
         self.assertEqual(self.document.title, "Replacement title")
         self.assertEqual(self.document.content_type, "image/jpeg")
         self.assertEqual(self.document.creator_id, self.owner.pk)
+        self.assertFalse(self.storage.exists(self.old_key))
+
+    def test_mpo_replacement_preserves_content_and_cleans_previous_object(self):
+        self.client.force_authenticate(user=self.editor)
+        content = mpo_bytes()
+        response = self.client.patch(self.url, {
+            "file": SimpleUploadedFile("camera.jpeg", content, content_type="image/jpeg"),
+        }, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        self.assertEqual(response.data["content_type"], "image/mpo")
+        self.assertEqual(response.data["original_filename"], "camera.jpeg")
+        self.assertEqual(response.data["file_size"], len(content))
+        self.document.refresh_from_db()
+        self.assertRegex(self.document.object_key, r"\Adocuments/[0-9a-f]{32}\.mpo\Z")
+        self.assertEqual(self.storage.open(self.document.object_key).read(), content)
+        self.assertTrue(self.storage.exists(self.old_key))
+        deliver_outbox_once()
         self.assertFalse(self.storage.exists(self.old_key))
 
     def test_viewer_cannot_update(self):

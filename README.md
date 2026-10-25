@@ -1,6 +1,6 @@
 # Sanaap Document Management API
 
-A Django REST Framework API for shared JPEG/PNG documents, using PostgreSQL,
+A Django REST Framework API for shared JPEG/MPO and PNG documents, using PostgreSQL,
 private MinIO storage, Celery background uploads, Redis metadata caching,
 authenticated WebSocket notifications, and JWT application roles.
 
@@ -173,12 +173,17 @@ storage keys and version identifiers are omitted. Times are UTC ISO 8601 values.
 
 ## Uploading and updating images
 
-Images must contain real JPEG or PNG data and be at most **10 MiB (10,485,760
+Images must contain real JPEG (including multi-picture MPO) or PNG data and be at most **10 MiB (10,485,760
 bytes)**. The exact limit is accepted. Images must fully decode; truncated pixel
 data is rejected. Filenames and declared MIME types do not bypass image-content
 validation. Titles are trimmed, nonblank, and at most 255
 characters. The server assigns creator, timestamps, unique storage key, and file
 metadata; client-supplied values cannot override them.
+
+MPO camera files may have a `.jpeg` filename while containing multiple JPEG
+pictures. Every picture must decode within Pillow's pixel limit. The original
+file bytes and filename are preserved; detected metadata uses `image/mpo` and
+the internal object key uses `.mpo`. Files are not converted or recompressed.
 
 Set `API_ACCESS_TOKEN` to an access token from login, then upload an existing file:
 

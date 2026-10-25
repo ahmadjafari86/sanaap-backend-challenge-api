@@ -6,6 +6,7 @@ from django.test import override_settings
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.files.storage import InMemoryStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from minio.error import MinioException
@@ -16,6 +17,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from urllib3.exceptions import HTTPError
 
 from ..models import Document
+from .image_helpers import mpo_bytes
 
 User = get_user_model()
 
@@ -152,6 +154,34 @@ class DocumentUploadAPITests(APITestCase):
         self.assertEqual(document.content_type, "image/png")
         self.assertEqual(document.original_filename, "misleading.jpeg")
         self.assertRegex(document.object_key, r"\Adocuments/[0-9a-f]{32}\.png\Z")
+
+    def test_mpo_upload_and_worker_preserve_both_pictures_and_metadata(self):
+        from apps.outbox.models import OutboxReceipt
+        from ..tasks import store_document
+
+        self.authenticate_editor()
+        content = mpo_bytes()
+        storage = InMemoryStorage()
+        with patch("apps.documents.services.default_storage", storage):
+            response = self.client.post(self.url, {
+                "title": "Camera image",
+                "file": SimpleUploadedFile("camera.jpeg", content, content_type="image/jpeg"),
+            }, format="multipart")
+
+            self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED, response.content)
+            self.assertEqual(response.data["content_type"], "image/mpo")
+            self.assertEqual(response.data["original_filename"], "camera.jpeg")
+            self.assertEqual(response.data["file_size"], len(content))
+            document = Document.objects.get(pk=response.data["id"])
+            self.assertRegex(document.object_key, r"\Adocuments/[0-9a-f]{32}\.mpo\Z")
+            self.assertEqual((Path(self.directory.name) / document.staging_key).read_bytes(), content)
+
+            store_document.run(document.pk)
+
+            document.refresh_from_db()
+            self.assertEqual(document.status, "READY")
+            self.assertEqual(storage.open(document.object_key).read(), content)
+            self.assertEqual(OutboxReceipt.objects.count(), 1)
 
     @patch("apps.documents.services.default_storage")
     def test_missing_or_blank_required_fields_are_rejected(self, storage):

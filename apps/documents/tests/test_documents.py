@@ -14,6 +14,7 @@ from ..models import Document
 from ..permissions import DocumentRolePermission
 from ..serializers import DocumentUploadSerializer
 from ..services import create_document
+from .image_helpers import mpo_bytes
 
 User = get_user_model()
 
@@ -132,6 +133,66 @@ class DocumentUploadValidationTests(SimpleTestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("file", serializer.errors)
+
+    def test_mpo_with_jpeg_or_mpo_name_preserves_original_content(self):
+        content = mpo_bytes()
+        for filename in ("camera.jpeg", "camera.mpo"):
+            with self.subTest(filename=filename):
+                serializer = DocumentUploadSerializer(data={
+                    "title": "Camera image",
+                    "file": SimpleUploadedFile(filename, content, content_type="image/jpeg"),
+                })
+                self.assertTrue(serializer.is_valid(), serializer.errors)
+                uploaded = serializer.validated_data["file"]
+                self.assertEqual(uploaded.content_type, "image/mpo")
+                self.assertEqual(uploaded.image.format, "MPO")
+                self.assertEqual(uploaded.tell(), 0)
+                self.assertEqual(uploaded.read(), content)
+
+    def test_mpo_with_invalid_secondary_image_is_rejected(self):
+        content = mpo_bytes()
+        secondary_start = content.index(b"\xff\xd8\xff", 3)
+        malformed = content[:secondary_start] + b"\0\0" + content[secondary_start + 2:]
+        invalid_images = {
+            "truncated pixels": content[:-100],
+            "invalid signature": malformed,
+            "truncated header": content[:secondary_start] + b"\xff\xd8\xff",
+            "invalid marker": content[:secondary_start] + b"\xff\xd8\xff\0",
+        }
+        for description, invalid in invalid_images.items():
+            with self.subTest(description=description):
+                # An intact primary JPEG must not hide a broken second picture.
+                with Image.open(BytesIO(invalid)) as image:
+                    image.load()
+                    self.assertEqual(image.n_frames, 2)
+                serializer = DocumentUploadSerializer(data={
+                    "title": "Incomplete camera image",
+                    "file": SimpleUploadedFile("camera.jpeg", invalid, content_type="image/jpeg"),
+                })
+                self.assertFalse(serializer.is_valid())
+                self.assertEqual(str(serializer.errors["file"][0]), "Upload a complete, valid image.")
+
+    def test_mpo_secondary_image_obeys_pillow_pixel_limit(self):
+        content = mpo_bytes(secondary_size=(200, 200))
+        with patch.object(Image, "MAX_IMAGE_PIXELS", 10000):
+            serializer = DocumentUploadSerializer(data={
+                "title": "Oversized secondary image",
+                "file": SimpleUploadedFile("camera.jpeg", content, content_type="image/jpeg"),
+            })
+            self.assertFalse(serializer.is_valid())
+        self.assertEqual(str(serializer.errors["file"][0]), "Upload a complete, valid image.")
+
+    def test_mpo_obeys_the_same_size_boundary(self):
+        content = mpo_bytes()
+        max_size = 10 * 1024 * 1024
+        for size, accepted in ((max_size, True), (max_size + 1, False)):
+            with self.subTest(size=size):
+                serializer = DocumentUploadSerializer(data={
+                    "title": "Camera size boundary",
+                    "file": SimpleUploadedFile("camera.jpeg", content + b"\0" * (size - len(content)),
+                                               content_type="image/jpeg"),
+                })
+                self.assertEqual(serializer.is_valid(), accepted, serializer.errors)
 
     def test_gif_is_rejected(self):
         serializer = DocumentUploadSerializer(
