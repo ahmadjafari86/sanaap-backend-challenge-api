@@ -110,6 +110,21 @@ the API so storage, cache versions and audit events stay consistent. Other staff
 accounts need the Django `documents.view_document` permission to browse this
 section. Internal object and staging keys are not shown.
 
+The **Outbox** section lists messages and processing receipts. Messages can be
+filtered by delivery status, kind, error code and creation date, and searched by
+full event UUID, exact document ID, deduplication key, kind or error code. Details
+show attempts, delivery/lease timestamps and the formatted payload; message and
+receipt pages link to each other. Receipts support event UUID search and date
+filtering. These pages are read-only even for superusers. Staff accounts need
+`outbox.view_outboxmessage` and/or `outbox.view_outboxreceipt` for the corresponding
+pages; application roles alone do not grant admin access.
+
+`PUBLISHED` confirms destination acceptance. For uploads, a receipt confirms that
+one processing attempt was committed; the document's READY/FAILED state determines
+the final storage outcome. Payload details can contain internal storage keys and
+are limited to staff with message-view permission. Explicit DEAD replay remains
+available through `replay_outbox`.
+
 ## Authentication and Swagger
 
 Sign in at `/admin/`, then open `/api/docs/` and expand **Authentication → Obtain an access and refresh
