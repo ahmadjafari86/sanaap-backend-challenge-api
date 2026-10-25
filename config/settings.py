@@ -96,7 +96,8 @@ ASGI_APPLICATION = 'config.asgi.application'
 TEST_RUNNER = 'config.testing.IsolatedChannelTestRunner'
 
 WEBSOCKET_AUTH_TIMEOUT = 5
-WEBSOCKET_ALLOWED_ORIGINS = env.list("WEBSOCKET_ALLOWED_ORIGINS", default=["http://127.0.0.1:8000", "http://localhost:8000"])
+WEBSOCKET_ALLOWED_ORIGINS = env.list("WEBSOCKET_ALLOWED_ORIGINS", default=[
+                                     "http://127.0.0.1:8000", "http://localhost:8000"])
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
@@ -138,8 +139,8 @@ SPECTACULAR_SETTINGS = {
 
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=12),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=3),
     "ROTATE_REFRESH_TOKENS": False,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
@@ -153,9 +154,11 @@ DATABASES = {
 }
 
 DOCUMENT_METADATA_CACHE_TTL_SECONDS = 60
-DOCUMENT_STAGING_ROOT = env("DOCUMENT_STAGING_ROOT", default=str(BASE_DIR / ".staging"))
+DOCUMENT_STAGING_ROOT = env("DOCUMENT_STAGING_ROOT",
+                            default=str(BASE_DIR / ".staging"))
 
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://127.0.0.1:6379/1")
+CELERY_BROKER_URL = env("CELERY_BROKER_URL",
+                        default="redis://127.0.0.1:6379/1")
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_TASK_IGNORE_RESULT = True
@@ -163,16 +166,22 @@ CELERY_TASK_DEFAULT_QUEUE = "documents"
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_BROKER_CONNECTION_TIMEOUT = 2
-CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 60, "socket_timeout": 2, "socket_connect_timeout": 2}
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "visibility_timeout": 60, "socket_timeout": 2, "socket_connect_timeout": 2}
 CELERY_TASK_PUBLISH_RETRY = False
 
-OUTBOX_POLL_INTERVAL_SECONDS = env.float("OUTBOX_POLL_INTERVAL_SECONDS", default=1)
+OUTBOX_POLL_INTERVAL_SECONDS = env.float(
+    "OUTBOX_POLL_INTERVAL_SECONDS", default=1)
 OUTBOX_BATCH_SIZE = env.int("OUTBOX_BATCH_SIZE", default=10)
 OUTBOX_LEASE_SECONDS = env.int("OUTBOX_LEASE_SECONDS", default=60)
-OUTBOX_MAX_PUBLICATION_ATTEMPTS = env.int("OUTBOX_MAX_PUBLICATION_ATTEMPTS", default=20)
-OUTBOX_RELAY_HEARTBEAT_FILE = env("OUTBOX_RELAY_HEARTBEAT_FILE", default="/tmp/outbox-relay.heartbeat")
-OUTBOX_UPLOAD_STALE_SECONDS = env.int("OUTBOX_UPLOAD_STALE_SECONDS", default=300)
-OUTBOX_RECOVERY_INTERVAL_SECONDS = env.int("OUTBOX_RECOVERY_INTERVAL_SECONDS", default=60)
+OUTBOX_MAX_PUBLICATION_ATTEMPTS = env.int(
+    "OUTBOX_MAX_PUBLICATION_ATTEMPTS", default=20)
+OUTBOX_RELAY_HEARTBEAT_FILE = env(
+    "OUTBOX_RELAY_HEARTBEAT_FILE", default="/tmp/outbox-relay.heartbeat")
+OUTBOX_UPLOAD_STALE_SECONDS = env.int(
+    "OUTBOX_UPLOAD_STALE_SECONDS", default=300)
+OUTBOX_RECOVERY_INTERVAL_SECONDS = env.int(
+    "OUTBOX_RECOVERY_INTERVAL_SECONDS", default=60)
 
 CACHES = {
     "default": {
